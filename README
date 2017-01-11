@@ -1,0 +1,10 @@
+### Run
+
+You are not supposed to run this project as-is since it does a one-time job. For reference only.
+
+  pip install virtualenv
+  virtuenv venv
+  source venv/bin/activate
+  pip install
+  gordon build
+  gordon apply

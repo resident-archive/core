@@ -1,8 +1,15 @@
 lambdas:
-  helloworld:
-    code: helloworld
+  new-tracks:
+    code: new-tracks
     handler: code.handler
     runtime: python
-    #description: Simple functions in python which says hello
-    #role:
-    #memory:
+    description: Endlessly add RA new songs to Spotify playlists
+    policies:
+      write_dynamo:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Action:
+              - "dynamodb:*"
+            Resource: "arn:aws:dynamodb:*:*:*"
+            Effect: "Allow"

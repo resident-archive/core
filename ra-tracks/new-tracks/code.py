@@ -18,17 +18,24 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(o)
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
     table = dynamodb.Table('tracks')
 
+    current_id = int(event['last'] or os.environ['last'])
+    now = int(time.time())
+
     response = table.put_item(
        Item={
-            'id': int(os.environ['last']) + 1,
-            'added': int(time.time())
+            'id': current_id,
+            'added': now
         }
     )
 
-    os.environ['last'] = str(int(os.environ['last']) + 1)
+    os.environ['last'] = str(current_id + 1)
     print("PutItem succeeded:")
     return json.dumps(response, indent=4, cls=DecimalEncoder)
+
+
+if __name__ == "__main__":
+    print handler({'last': 1}, {})
