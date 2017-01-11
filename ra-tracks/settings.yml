@@ -1,0 +1,8 @@
+lambdas:
+  helloworld:
+    code: helloworld
+    handler: code.handler
+    runtime: python
+    #description: Simple functions in python which says hello
+    #role:
+    #memory:
