@@ -3,7 +3,23 @@ lambdas:
     code: new-tracks
     handler: code.handler
     runtime: python
-    description: Endlessly add RA new songs to Spotify playlists
+    description: Get RA new songs
+    timeout: 50
+    policies:
+      write_dynamo:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Action:
+              - "dynamodb:*"
+            Resource: "arn:aws:dynamodb:*:*:*"
+            Effect: "Allow"
+  to-playlists:
+    code: to-playlists
+    handler: code.handler
+    runtime: python
+    description: Add songs to Spotify playlists
+    timeout: 15
     policies:
       write_dynamo:
         Version: "2012-10-17"
