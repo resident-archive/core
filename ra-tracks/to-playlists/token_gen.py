@@ -2,7 +2,6 @@ import json
 import os
 import time
 
-import requests
 import spotipy
 import spotipy.util as util
 import spotipy.oauth2 as oauth2
