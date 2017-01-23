@@ -86,11 +86,13 @@ def handler(event, context):
     dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
     table = dynamodb.Table('any_tracks')
 
-    begin_time = int(time.time())
-    now = int(time.time())
+    now = begin_time = int(time.time())
     current_id = get_last_parsed_track(table)
 
     while now < begin_time + LAMBDA_EXEC_TIME:
+        # needs to be at the beginning because of all the continues
+        now = int(time.time())
+
         current_id += 1
         try:
             ra_name, release_date = get_song_from_index(current_id)
@@ -103,7 +105,6 @@ def handler(event, context):
             print current_id, ra_name, e
             continue
 
-        spotify_uri = find_on_spotify(ra_name)
         item = {
             'host': 'ra',
             'id': current_id,
@@ -118,7 +119,6 @@ def handler(event, context):
                                      release_date, spotify_uri)
 
         response = table.put_item(Item=item)
-        now = int(time.time())
 
     return json.dumps(response, indent=4, cls=DecimalEncoder)
 

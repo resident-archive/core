@@ -29,3 +29,18 @@ lambdas:
               - "dynamodb:*"
             Resource: "arn:aws:dynamodb:*:*:*"
             Effect: "Allow"
+  rediscover:
+    code: rediscover
+    handler: code.handler
+    runtime: python
+    description: Rediscover songs not found on Spotify
+    timeout: 20
+    policies:
+      write_dynamo:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Action:
+              - "dynamodb:*"
+            Resource: "arn:aws:dynamodb:*:*:*"
+            Effect: "Allow"
