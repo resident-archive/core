@@ -97,6 +97,12 @@ def handler(event, context):
         except Exception:
             continue
 
+        try:
+            spotify_uri = find_on_spotify(ra_name)
+        except Exception, e:
+            print current_id, ra_name, e
+            continue
+
         spotify_uri = find_on_spotify(ra_name)
         item = {
             'host': 'ra',
