@@ -1,0 +1,8 @@
+{
+  "name": "residentify",
+  "description": "RA tracks to Spotify",
+  "memory": 128,
+  "timeout": 60,
+  "role": "arn:aws:iam::705440408593:role/apex_lambda_function",
+  "environment": {}
+}

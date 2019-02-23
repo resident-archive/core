@@ -1,0 +1,7 @@
+{
+  "description": "Fetch all RA tracks from 1 to +oo",
+  "runtime": "python2.7",
+  "hooks":{
+    "build": "pip install -r requirements.txt -t ./env"
+  }
+}

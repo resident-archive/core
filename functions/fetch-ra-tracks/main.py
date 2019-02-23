@@ -1,20 +1,29 @@
+"""
+Fetch all RA tracks from 1 to +oo
+"""
+
+# As set in requirements.txt, this is to use libraries in env/ instead of .
+import os
+import sys
+file_path = os.path.dirname(__file__)
+module_path = os.path.join(file_path, "env")
+sys.path.append(module_path)
+
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
 
 import json
 import decimal
-import os
 import time
 
 from bs4 import BeautifulSoup
 import urlparse
 import requests
-import spotipy
+import re
 
-LAMBDA_EXEC_TIME = 40
-
-spotify = spotipy.Spotify()
+LAMBDA_EXEC_TIME = os.getenv('LAMBDA_EXEC_TIME', 50)
+PERSIST_DATA = os.getenv('PERSIST_DATA', True)
 
 
 def url_at_index(index):
@@ -35,12 +44,17 @@ def stringified_page(url):
 
 
 def extract_track_info(page):
-    date = page.find_all(string="Release Date /", limit=1)
+    date = page.find_all(text=re.compile("Release Date /"))
     title = page.find('h1').getText()
-    release_element = date[0].parent.parent
-    release_element.div.decompose()
-    release_date = release_element.getText().strip()
-    return (title, release_date)
+
+    date = page.find_all(text=re.compile("First charted /"))
+    first_charted_element = date[0].parent.parent
+    first_charted_element.div.decompose()
+    first_charted_element.a.decompose()
+
+    first_charted_year = first_charted_element.getText().strip()[-7:][:4]
+
+    return (title, first_charted_year)
 
 
 def get_song_from_index(index):
@@ -65,12 +79,6 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(o)
 
 
-def find_on_spotify(ra_name):
-    results = spotify.search(ra_name, limit=1, type='track')
-    for i, t in enumerate(results['tracks']['items']):
-        return t['uri']
-
-
 def get_last_parsed_track(table):
     res = table.query(
         ScanIndexForward=False,
@@ -82,12 +90,18 @@ def get_last_parsed_track(table):
     return res['Items'][0]['id']
 
 
-def handler(event, context):
-    dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
-    table = dynamodb.Table('any_tracks')
+def handle(event, context):
+    """
+    Lambda handler
+    """
+    if PERSIST_DATA:
+        dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
+        table = dynamodb.Table('any_tracks')
+        current_id = int(get_last_parsed_track(table))
+    else:
+        current_id = 1
 
     now = begin_time = int(time.time())
-    current_id = get_last_parsed_track(table)
 
     while now < begin_time + LAMBDA_EXEC_TIME:
         # needs to be at the beginning because of all the continues
@@ -95,33 +109,26 @@ def handler(event, context):
 
         current_id += 1
         try:
-            ra_name, release_date = get_song_from_index(current_id)
+            ra_name, first_charted_year = get_song_from_index(current_id)
         except Exception:
-            continue
-
-        try:
-            spotify_uri = find_on_spotify(ra_name)
-        except Exception, e:
-            print current_id, ra_name, e
             continue
 
         item = {
             'host': 'ra',
-            'id': current_id,
+            'id': str(current_id),
             'added': now,
             'name': ra_name,
-            'release_date': release_date
+            'first_charted_year': first_charted_year
         }
-        if spotify_uri:
-            item['spotify'] = spotify_uri
 
-        print "%s - %s (%s) | %s" % (current_id, ra_name,
-                                     release_date, spotify_uri)
+        print "%s - %s (%s)" % (str(current_id), ra_name, first_charted_year)
 
-        response = table.put_item(Item=item)
+        if PERSIST_DATA:
+            response = table.put_item(Item=item)
 
-    return json.dumps(response, indent=4, cls=DecimalEncoder)
+    if PERSIST_DATA:
+        return json.dumps(response, indent=4, cls=DecimalEncoder)
 
 
 if __name__ == "__main__":
-    print handler({}, {})
+    print handle({}, {})

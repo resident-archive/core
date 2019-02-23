@@ -1,10 +1,15 @@
-### Run ###
+# RA-tracks
 
-You are not supposed to run this project as-is since it does a one-time job. For reference only.
+Up-to-date Spotify playlists for [residentadvisor.net](https://residentadvisor.net)'s community-made music library.
 
-    pip install virtualenv
-    virtuenv venv
-    source venv/bin/activate
-    pip install
-    gordon build
-    gordon apply
+## λ1 – Fetch ResidentAdvisor tracks
+
+ - Adds song names from https://residentadvisor.net/tracks to DynamoDB
+
+## λ2 – Search on Spotify
+
+ - Search for old and new songs on Spotify
+
+## λ3 – To Spotify Playlists
+
+ - Adds Spotify songs to yearly Spotify playlists
