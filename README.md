@@ -4,12 +4,15 @@ Up-to-date Spotify playlists for [residentadvisor.net](https://residentadvisor.n
 
 ## λ1 – Fetch ResidentAdvisor tracks
 
- - Adds song names from https://residentadvisor.net/tracks to DynamoDB
+ - Gets all track names from https://residentadvisor.net/tracks to DynamoDB
+ - Triggers λ2 for each entry
 
 ## λ2 – Search on Spotify
 
  - Search for old and new songs on Spotify
+ - Triggers λ3 when a Spotify song is found
 
 ## λ3 – To Spotify Playlists
 
- - Adds Spotify songs to yearly Spotify playlists
+ - Adds a Spotify song to the Spotify playlist
+ - Create playlist for each year

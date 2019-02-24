@@ -16,7 +16,7 @@
  - DynamoDB table:
     - name: `any_tracks`
     - partition key: `host` (string)
-    - sort key: `added` (number)
+    - sort key: `id` (number)
  - IAM role:
     - name: `apex_lambda_function`
     - permissions: IAM, DynamoDB, Lambda

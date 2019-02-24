@@ -97,7 +97,7 @@ def handle(event, context):
     if PERSIST_DATA:
         dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
         table = dynamodb.Table('any_tracks')
-        current_id = int(get_last_parsed_track(table))
+        current_id = get_last_parsed_track(table)
     else:
         current_id = 1
 
@@ -115,13 +115,13 @@ def handle(event, context):
 
         item = {
             'host': 'ra',
-            'id': str(current_id),
+            'id': current_id,
             'added': now,
             'name': ra_name,
             'first_charted_year': first_charted_year
         }
 
-        print "%s - %s (%s)" % (str(current_id), ra_name, first_charted_year)
+        print "%s - %s (%s)" % (current_id, ra_name, first_charted_year)
 
         if PERSIST_DATA:
             response = table.put_item(Item=item)
