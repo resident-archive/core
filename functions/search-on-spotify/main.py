@@ -2,12 +2,8 @@
 Search track names on Spotify
 """
 
-# As set in requirements.txt, this is to use libraries in env/ instead of .
 import os
 import sys
-file_path = os.path.dirname(__file__)
-module_path = os.path.join(file_path, "env")
-sys.path.append(module_path)
 
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
@@ -22,6 +18,11 @@ import spotipy
 import spotipy.util as util
 import spotipy.oauth2 as oauth2
 
+# https://github.com/apex/apex/issues/639#issuecomment-455883587
+file_path = os.path.dirname(__file__)
+module_path = os.path.join(file_path, "env")
+sys.path.append(module_path)
+
 LAMBDA_EXEC_TIME = 110
 STOP_SEARCH = 50
 
@@ -29,6 +30,7 @@ STOP_SEARCH = 50
 dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
 cursors_table = dynamodb.Table('ra_cursors')
 tracks_table = dynamodb.Table('any_tracks')
+playlists_table = dynamodb.Table('ra_playlists')
 
 # Spotify
 SPOTIPY_CLIENT_ID = os.getenv('SPOTIPY_CLIENT_ID')
@@ -65,10 +67,67 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(o)
 
 
-def find_on_spotify(spotify, ra_name):
-    results = spotify.search(ra_name, limit=1, type='track')
+def find_on_spotify(ra_name):
+    results = sp.search(ra_name, limit=1, type='track')
     for i, t in enumerate(results['tracks']['items']):  # i unused
         return t['uri']
+
+
+def get_last_playlist_for_year(year):
+    res = playlists_table.query(
+        ScanIndexForward=False,
+        KeyConditionExpression=Key('year').eq(year),
+        Limit=1
+    )
+    if res['Count'] == 0:
+        return
+    return [res['Items'][0]['playlist_id'], res['Items'][0]['num']]
+
+
+def create_playlist_for_year(year, num=1):
+    playlist_name = 'RA: Archives (%d)' % year
+    if num > 1:
+        playlist_name += ' #%d' % num
+    res = sp.user_playlist_create(user, playlist_name, public=False)
+    playlists_table.put_item(
+        Item={
+            'year': year,
+            'num': num,
+            'playlist_id': res['id']
+        }
+    )
+    return [res['id'], num]
+
+
+def get_playlist(year):
+    return get_last_playlist_for_year(year) or create_playlist_for_year(year)
+
+
+def add_track_to_spotify_playlist(track_spotify_uri, year):
+    playlist_id, playlist_num = get_playlist(year)
+    try:
+        sp.user_playlist_add_tracks(
+            user,
+            playlist_id,
+            [track_spotify_uri])
+    except Exception, e:
+        if status not in e:
+            # Reached API limit
+            raise e
+        # if playlist is full, it will be thrown here
+        # this way we don't need to explicitely count items in playlists
+        if e.status == 403:
+            playlist_id, playlist_num = create_playlist_for_year(
+                year,
+                playlist_num+1)
+            sp.user_playlist_add_tracks(
+                user,
+                playlist_id,
+                [track_spotify_uri])
+    print 'Added %s (%d) to %s' % (
+        track_spotify_uri,
+        year,
+        playlist_id)
 
 
 def get_cursor():
@@ -106,7 +165,8 @@ def get_track_from_dynamodb(track_id):
         },
         AttributesToGet=[
             'spotify',
-            'name'
+            'name',
+            'first_charted_year'
         ]
     )
     return res['Item']
@@ -131,6 +191,7 @@ def persist_spotify_uri(spotify_uri, cur, current_track):
         AttributeUpdates=attribute_updates
     )
 
+
 def handle(event, context):
     now = begin_time = int(time.time())
     cur = last_retrieved_song_id = get_cursor()
@@ -152,22 +213,26 @@ def handle(event, context):
             continue
 
         last_retrieved_song_id = cur
+        first_charted_year = int(current_track['first_charted_year'])
 
-        if 'spotify' in current_track:
-            # possible to not get those in the query?
-            continue
+        if 'spotify' not in current_track:
+            try:
+                spotify_uri = find_on_spotify(current_track['name'])
+            except Exception, e:
+                print e
+                # stop when Spotify API limit reached
+                break
+            if not spotify_uri:
+                continue
+            print "Found new uri! %s" % spotify_uri
+            persist_spotify_uri(spotify_uri, cur, current_track)
+        else:
+            spotify_uri = current_track['spotify']
 
         try:
-            spotify_uri = find_on_spotify(sp, current_track['name'])
-        except Exception, e:
-            print e
-            # stop when Spotify API limit reached
+            add_track_to_spotify_playlist(spotify_uri, first_charted_year)
+        except Exception:
             break
-
-        if not spotify_uri:
-            continue
-
-        persist_spotify_uri(spotify_uri, cur, current_track)
 
     set_cursor(last_retrieved_song_id)
 

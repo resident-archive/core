@@ -2,12 +2,8 @@
 Fetch all RA tracks from 1 to +oo
 """
 
-# As set in requirements.txt, this is to use libraries in env/ instead of .
 import os
 import sys
-file_path = os.path.dirname(__file__)
-module_path = os.path.join(file_path, "env")
-sys.path.append(module_path)
 
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
@@ -24,6 +20,11 @@ import re
 
 LAMBDA_EXEC_TIME = os.getenv('LAMBDA_EXEC_TIME', 50)
 PERSIST_DATA = os.getenv('PERSIST_DATA', True)
+
+# https://github.com/apex/apex/issues/639#issuecomment-455883587
+file_path = os.path.dirname(__file__)
+module_path = os.path.join(file_path, "env")
+sys.path.append(module_path)
 
 
 def url_at_index(index):

@@ -2,17 +2,19 @@
 
 Up-to-date Spotify playlists for [residentadvisor.net](https://residentadvisor.net)'s community-made music library.
 
-## λ1 – Fetch ResidentAdvisor tracks
+## λ1 – From Resident Advisor
 
- - Gets all track names from https://residentadvisor.net/tracks to DynamoDB
+ - Gets and stores all track names from https://residentadvisor.net/tracks
  - Triggers λ2 for each entry
 
-## λ2 – Search on Spotify
+Triggered by `CRON(1 minute)` and once all songs are found, `CRON(1 hour)`.
 
- - Search for old and new songs on Spotify
- - Triggers λ3 when a Spotify song is found
+## λ2 – To Spotify
 
-## λ3 – To Spotify Playlists
+ - Indefinitely search for stored songs on Spotify
+ - Create yearly playlists and add songs to them
 
- - Adds a Spotify song to the Spotify playlist
- - Create playlist for each year
+Triggered by:
+
+ - `CRON(5 minutes)`
+ - λ1
