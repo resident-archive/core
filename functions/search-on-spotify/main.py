@@ -104,26 +104,24 @@ def get_playlist(year):
 
 
 def add_track_to_spotify_playlist(track_spotify_uri, year):
-    playlist_id, playlist_num = get_playlist(year)
     try:
+        playlist_id, playlist_num = get_playlist(year)
         sp.user_playlist_add_tracks(
             user,
             playlist_id,
             [track_spotify_uri])
     except Exception, e:
-        if status not in e:
-            # Reached API limit
-            raise e
         # if playlist is full, it will be thrown here
         # this way we don't need to explicitely count items in playlists
-        if e.status == 403:
-            playlist_id, playlist_num = create_playlist_for_year(
+        if "status" in e and e.status == 403:
+            playlist_id, = create_playlist_for_year(
                 year,
                 playlist_num+1)
-            sp.user_playlist_add_tracks(
-                user,
-                playlist_id,
-                [track_spotify_uri])
+            # retry same fonction to use API limit logic
+            add_track_to_spotify_playlist(track_spotify_uri, year)
+        else:
+            # Reached API limit
+            raise e
     print 'Added %s (%d) to %s' % (
         track_spotify_uri,
         year,
@@ -194,7 +192,7 @@ def persist_spotify_uri(spotify_uri, cur, current_track):
 
 def handle(event, context):
     now = begin_time = int(time.time())
-    cur = last_retrieved_song_id = get_cursor()
+    cur = last_successfully_processed_song_id = get_cursor()
     missing_song_in_a_row_count = 0
 
     while now < begin_time + LAMBDA_EXEC_TIME:
@@ -212,29 +210,25 @@ def handle(event, context):
                 return
             continue
 
-        last_retrieved_song_id = cur
-        first_charted_year = int(current_track['first_charted_year'])
-
-        if 'spotify' not in current_track:
-            try:
-                spotify_uri = find_on_spotify(current_track['name'])
-            except Exception, e:
-                print e
-                # stop when Spotify API limit reached
-                break
-            if not spotify_uri:
-                continue
-            print "Found new uri! %s" % spotify_uri
-            persist_spotify_uri(spotify_uri, cur, current_track)
-        else:
-            spotify_uri = current_track['spotify']
-
         try:
-            add_track_to_spotify_playlist(spotify_uri, first_charted_year)
-        except Exception:
+            if 'spotify' not in current_track:
+                spotify_uri = find_on_spotify(current_track['name'])
+                if not spotify_uri:
+                    continue
+                print "Found new uri! %s" % spotify_uri
+                persist_spotify_uri(spotify_uri, cur, current_track)
+            else:
+                spotify_uri = current_track['spotify']
+            add_track_to_spotify_playlist(
+                spotify_uri,
+                int(current_track['first_charted_year']))
+        except Exception, e:
+            print e
+            # stop when Spotify API limit reached
             break
+        last_successfully_processed_song_id = cur
 
-    set_cursor(last_retrieved_song_id)
+    set_cursor(last_successfully_processed_song_id)
 
 
 if __name__ == "__main__":
