@@ -5,6 +5,11 @@ Search track names on Spotify
 import os
 import sys
 
+# https://github.com/apex/apex/issues/639#issuecomment-455883587
+file_path = os.path.dirname(__file__)
+module_path = os.path.join(file_path, "env")
+sys.path.append(module_path)
+
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
@@ -17,11 +22,6 @@ import time
 import spotipy
 import spotipy.util as util
 import spotipy.oauth2 as oauth2
-
-# https://github.com/apex/apex/issues/639#issuecomment-455883587
-file_path = os.path.dirname(__file__)
-module_path = os.path.join(file_path, "env")
-sys.path.append(module_path)
 
 LAMBDA_EXEC_TIME = 110
 STOP_SEARCH = 50
