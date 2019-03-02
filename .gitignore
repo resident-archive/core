@@ -1,4 +1,3 @@
 env/
 .venv/
-tmp/
 env.json

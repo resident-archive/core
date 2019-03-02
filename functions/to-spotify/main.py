@@ -18,10 +18,23 @@ import json
 import decimal
 import os
 import time
+import decimal
 
 import spotipy
 import spotipy.util as util
 import spotipy.oauth2 as oauth2
+
+
+# Helper class to convert a DynamoDB item to JSON.
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, decimal.Decimal):
+            if o % 1 > 0:
+                return float(o)
+            else:
+                return int(o)
+        return super(DecimalEncoder, self).default(o)
+
 
 LAMBDA_EXEC_TIME = 110
 STOP_SEARCH = 50
@@ -40,20 +53,54 @@ SPOTIPY_REDIRECT_URI = 'http://localhost/'
 scope = 'playlist-read-private playlist-modify-private'
 user = '11111204'
 
-sp_oauth = oauth2.SpotifyOAuth(
-        SPOTIPY_CLIENT_ID,
-        SPOTIPY_CLIENT_SECRET,
-        SPOTIPY_REDIRECT_URI,
-        scope=scope,
-        cache_path='./tmp/.cache-'+user
-    )
 
-token = sp_oauth.get_cached_token()
-if not token:
-    # This token is to manually get from token.py and set as an env. var
-    code = os.environ.get('CODE') or event.get('CODE')
-    token = sp_oauth.get_access_token(code)
-sp = spotipy.Spotify(auth=token['access_token'])
+def restore_spotify_token():
+    res = cursors_table.get_item(
+        Key={
+            'name': 'token'
+        },
+        AttributesToGet=[
+            'value'
+        ]
+    )
+    if 'Item' not in res:
+        print res
+        return 0
+
+    token = res['Item']['value']
+    with open("/tmp/.cache-"+user, "w+") as f:
+        f.write("%s" % json.dumps(token, ensure_ascii=False, cls=DecimalEncoder))
+
+    print 'Restored token: %s' % token
+
+
+def store_spotify_token(token_info):
+    cursors_table.put_item(
+        Item={
+            'name': 'token',
+            'value': token_info
+        }
+    )
+    print "Stored token: %s" % token_info
+
+
+def get_spotify():
+    restore_spotify_token()
+
+    sp_oauth = oauth2.SpotifyOAuth(
+            SPOTIPY_CLIENT_ID,
+            SPOTIPY_CLIENT_SECRET,
+            SPOTIPY_REDIRECT_URI,
+            scope=scope,
+            cache_path='/tmp/.cache-'+user
+        )
+
+    token_info = sp_oauth.get_cached_token()
+    token_info = sp_oauth.refresh_access_token(token_info['refresh_token'])
+
+    store_spotify_token(token_info)
+
+    return spotipy.Spotify(auth=token_info['access_token'])
 
 
 # Helper class to convert a DynamoDB item to JSON.
@@ -67,7 +114,7 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(o)
 
 
-def find_on_spotify(ra_name):
+def find_on_spotify(sp, ra_name):
     results = sp.search(ra_name, limit=1, type='track')
     for i, t in enumerate(results['tracks']['items']):  # i unused
         return t['uri']
@@ -84,7 +131,7 @@ def get_last_playlist_for_year(year):
     return [res['Items'][0]['playlist_id'], res['Items'][0]['num']]
 
 
-def create_playlist_for_year(year, num=1):
+def create_playlist_for_year(sp, year, num=1):
     playlist_name = 'RA: Archives (%d)' % year
     if num > 1:
         playlist_name += ' #%d' % num
@@ -103,7 +150,7 @@ def get_playlist(year):
     return get_last_playlist_for_year(year) or create_playlist_for_year(year)
 
 
-def add_track_to_spotify_playlist(track_spotify_uri, year):
+def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
     try:
         playlist_id, playlist_num = get_playlist(year)
         sp.user_playlist_add_tracks(
@@ -118,14 +165,11 @@ def add_track_to_spotify_playlist(track_spotify_uri, year):
                 year,
                 playlist_num+1)
             # retry same fonction to use API limit logic
-            add_track_to_spotify_playlist(track_spotify_uri, year)
+            add_track_to_spotify_playlist(sp, track_spotify_uri, year)
         else:
             # Reached API limit
             raise e
-    print 'Added %s (%d) to %s' % (
-        track_spotify_uri,
-        year,
-        playlist_id)
+    return playlist_id
 
 
 def get_cursor():
@@ -162,35 +206,47 @@ def get_track_from_dynamodb(track_id):
             'id': track_id
         },
         AttributesToGet=[
-            'spotify',
+            'track_uri',
             'name',
-            'first_charted_year'
+            'first_charted_year',
+            'release_date_year',
+            'playlist_id'
         ]
     )
     return res['Item']
 
 
-def persist_spotify_uri(spotify_uri, cur, current_track):
-    keys = {
-        'host': 'ra',
-        'id': cur
-    }
-    attribute_updates = {
-        'spotify': {
-            'Value': spotify_uri,
-            'Action': 'PUT'
-        }
-    }
-
-    print "%s - %s | %s" % (cur, current_track['name'], spotify_uri)
+def persist_spotify_uris(track_uri, playlist_id, cur, current_track, year):
+    print "%s - %s (%d) | %s in %s" % (cur, current_track['name'],
+                                       year, track_uri, playlist_id)
 
     return tracks_table.update_item(
-        Key=keys,
-        AttributeUpdates=attribute_updates
+        Key={
+            'host': 'ra',
+            'id': cur
+        },
+        AttributeUpdates={
+            'track_uri': {
+                'Value': track_uri,
+                'Action': 'PUT'
+            },
+            'playlist_id': {
+                'Value': playlist_id,
+                'Action': 'PUT'
+            }
+        }
     )
 
 
+def get_min_year(current_track):
+    release_date_year = current_track['release_date_year']
+    if 'first_charted_year' not in current_track:
+        return release_date_year
+    return min(release_date_year, current_track['first_charted_year'])
+
+
 def handle(event, context):
+    sp = get_spotify()
     now = begin_time = int(time.time())
     cur = last_successfully_processed_song_id = get_cursor()
     missing_song_in_a_row_count = 0
@@ -210,18 +266,20 @@ def handle(event, context):
                 return
             continue
 
+        if 'playlist_id' in current_track:
+            continue
+
         try:
-            if 'spotify' not in current_track:
-                spotify_uri = find_on_spotify(current_track['name'])
-                if not spotify_uri:
+            if 'spotify_uri' not in current_track:
+                track_uri = find_on_spotify(sp, current_track['name'])
+                if not track_uri:
                     continue
-                print "Found new uri! %s" % spotify_uri
-                persist_spotify_uri(spotify_uri, cur, current_track)
             else:
-                spotify_uri = current_track['spotify']
-            add_track_to_spotify_playlist(
-                spotify_uri,
-                int(current_track['first_charted_year']))
+                track_uri = current_track['spotify_uri']
+            year = get_min_year(current_track)
+            playlist_id = add_track_to_spotify_playlist(sp, track_uri, year)
+            persist_spotify_uris(track_uri, playlist_id,
+                                 cur, current_track, year)
         except Exception, e:
             print e
             # stop when Spotify API limit reached
