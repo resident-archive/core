@@ -135,8 +135,7 @@ def handle(event, context):
         if release_date_year:
             item['release_date_year'] = release_date_year
 
-        print "%s - %s (%d | %d)" % (current_id, ra_name,
-                                     release_date_year, first_charted_year)
+        print "%s - %s (%d)" % (current_id, ra_name, release_date_year)
 
         if PERSIST_DATA:
             response = table.put_item(Item=item)

@@ -48,10 +48,10 @@ playlists_table = dynamodb.Table('ra_playlists')
 # Spotify
 SPOTIPY_CLIENT_ID = os.getenv('SPOTIPY_CLIENT_ID')
 SPOTIPY_CLIENT_SECRET = os.getenv('SPOTIPY_CLIENT_SECRET')
+SPOTIPY_USER = os.getenv('SPOTIPY_USER')
 SPOTIPY_REDIRECT_URI = 'http://localhost/'
 
-scope = 'playlist-read-private playlist-modify-private'
-user = '11111204'
+scope = 'playlist-read-private playlist-modify-private playlist-modify-public'
 
 
 def restore_spotify_token():
@@ -68,7 +68,7 @@ def restore_spotify_token():
         return 0
 
     token = res['Item']['value']
-    with open("/tmp/.cache-"+user, "w+") as f:
+    with open("/tmp/.cache-"+SPOTIPY_USER, "w+") as f:
         f.write("%s" % json.dumps(token, ensure_ascii=False, cls=DecimalEncoder))
 
     print 'Restored token: %s' % token
@@ -92,7 +92,7 @@ def get_spotify():
             SPOTIPY_CLIENT_SECRET,
             SPOTIPY_REDIRECT_URI,
             scope=scope,
-            cache_path='/tmp/.cache-'+user
+            cache_path='/tmp/.cache-'+SPOTIPY_USER
         )
 
     token_info = sp_oauth.get_cached_token()
@@ -132,10 +132,10 @@ def get_last_playlist_for_year(year):
 
 
 def create_playlist_for_year(sp, year, num=1):
-    playlist_name = 'RA: Archives (%d)' % year
+    playlist_name = 'RA: %d' % year
     if num > 1:
-        playlist_name += ' #%d' % num
-    res = sp.user_playlist_create(user, playlist_name, public=False)
+        playlist_name += ' (%d)' % num
+    res = sp.user_playlist_create(SPOTIPY_USER, playlist_name, public=True)
     playlists_table.put_item(
         Item={
             'year': year,
@@ -146,15 +146,15 @@ def create_playlist_for_year(sp, year, num=1):
     return [res['id'], num]
 
 
-def get_playlist(year):
-    return get_last_playlist_for_year(year) or create_playlist_for_year(year)
+def get_playlist(sp, year):
+    return get_last_playlist_for_year(year) or create_playlist_for_year(sp, year)
 
 
 def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
     try:
-        playlist_id, playlist_num = get_playlist(year)
+        playlist_id, playlist_num = get_playlist(sp, year)
         sp.user_playlist_add_tracks(
-            user,
+            SPOTIPY_USER,
             playlist_id,
             [track_spotify_uri])
     except Exception, e:
@@ -162,6 +162,7 @@ def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
         # this way we don't need to explicitely count items in playlists
         if "status" in e and e.status == 403:
             playlist_id, = create_playlist_for_year(
+                sp,
                 year,
                 playlist_num+1)
             # retry same fonction to use API limit logic
@@ -242,7 +243,11 @@ def get_min_year(current_track):
     release_date_year = current_track['release_date_year']
     if 'first_charted_year' not in current_track:
         return release_date_year
-    return min(release_date_year, current_track['first_charted_year'])
+    min_year = min(release_date_year, current_track['first_charted_year'])
+    if min_year < 2006:
+        print min_year
+        return 2006
+    return min_year
 
 
 def handle(event, context):
@@ -263,12 +268,10 @@ def handle(event, context):
             missing_song_in_a_row_count += 1
             if missing_song_in_a_row_count == STOP_SEARCH:
                 print "Looks like the end of the list"
-                return
+                break
             continue
 
-        if 'playlist_id' in current_track:
-            continue
-
+        # if 'playlist_id' not in current_track:
         try:
             if 'spotify_uri' not in current_track:
                 track_uri = find_on_spotify(sp, current_track['name'])
@@ -277,7 +280,9 @@ def handle(event, context):
             else:
                 track_uri = current_track['spotify_uri']
             year = get_min_year(current_track)
-            playlist_id = add_track_to_spotify_playlist(sp, track_uri, year)
+            playlist_id = add_track_to_spotify_playlist(sp,
+                                                        track_uri,
+                                                        year)
             persist_spotify_uris(track_uri, playlist_id,
                                  cur, current_track, year)
         except Exception, e:

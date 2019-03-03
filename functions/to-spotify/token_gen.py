@@ -11,6 +11,7 @@ from pprint import pprint
 
 SPOTIPY_CLIENT_ID = os.getenv('SPOTIPY_CLIENT_ID')
 SPOTIPY_CLIENT_SECRET = os.getenv('SPOTIPY_CLIENT_SECRET')
+SPOTIPY_USER = os.getenv('SPOTIPY_USER')
 SPOTIPY_REDIRECT_URI = 'http://localhost/'
 
 # DB
@@ -19,17 +20,16 @@ cursors_table = dynamodb.Table('ra_cursors')
 
 
 def handler(event, context):
-    scope = 'playlist-read-private playlist-modify-private'
-    user = '11111204'
+    scope = 'playlist-read-private playlist-modify-private playlist-modify-public'
 
     util.prompt_for_user_token(
-        username=user,
+        username=SPOTIPY_USER,
         scope=scope,
         client_id=SPOTIPY_CLIENT_ID,
         client_secret=SPOTIPY_CLIENT_SECRET,
         redirect_uri=SPOTIPY_REDIRECT_URI)
 
-    with open('/tmp/.cache-'+user) as f:
+    with open('./.cache-'+SPOTIPY_USER) as f:
         data = json.load(f)
     pprint(data)
 
