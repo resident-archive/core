@@ -44,7 +44,7 @@ def stringified_page(url):
         raise Exception(r.status_code)
 
 
-def extract_track_info(page):
+def extract_track_info(page, last_year):
     title = page.find('h1').getText()
     try:
         release_date_element = page.find_all(text=re.compile("Release Date /"))
@@ -52,7 +52,7 @@ def extract_track_info(page):
         release_date_element.div.decompose()
         release_date_year = int(release_date_element.getText().strip()[-4:])
     except Exception, e:
-        release_date_year = None
+        release_date_year = last_year
 
     try:
         first_charted_element = page.find_all(text=re.compile("First charted /"))
@@ -66,7 +66,7 @@ def extract_track_info(page):
     return (title, first_charted_year, release_date_year)
 
 
-def get_song_from_index(index):
+def get_song_from_index(index, last_year=2006):
     url = url_at_index(index)
     try:
         content = stringified_page(url)
@@ -74,7 +74,7 @@ def get_song_from_index(index):
         os.environ['last'] = str(index + 1)
         raise
     page = BeautifulSoup(content, 'html.parser')
-    return extract_track_info(page)
+    return extract_track_info(page, last_year)
 
 
 # Helper class to convert a DynamoDB item to JSON.
@@ -96,7 +96,7 @@ def get_last_parsed_track(table):
     )
     if res['Count'] == 0:
         return 0
-    return res['Items'][0]['id']
+    return (res['Items'][0]['id'], res['Items'][0]['release_date_year'])
 
 
 def handle(event, context):
@@ -106,7 +106,7 @@ def handle(event, context):
     if PERSIST_DATA:
         dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
         table = dynamodb.Table('any_tracks')
-        current_id = get_last_parsed_track(table)
+        current_id, last_year = get_last_parsed_track(table)
     else:
         current_id = 0
 
@@ -118,7 +118,7 @@ def handle(event, context):
 
         current_id += 1
         try:
-            ra_name, first_charted_year, release_date_year = get_song_from_index(current_id)
+            ra_name, first_charted_year, release_date_year = get_song_from_index(current_id, last_year)
         except Exception:
             continue
 
