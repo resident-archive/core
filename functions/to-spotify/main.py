@@ -160,7 +160,7 @@ def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
     except Exception, e:
         # if playlist is full, it will be thrown here
         # this way we don't need to explicitely count items in playlists
-        if "status" in e and (e.status == 403 or e.status == 500):
+        if hasattr(e, 'http_status') and e.http_status in [403, 500]:
             playlist_id, = create_playlist_for_year(
                 sp,
                 year,
