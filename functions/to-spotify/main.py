@@ -25,6 +25,23 @@ import spotipy.util as util
 import spotipy.oauth2 as oauth2
 
 
+# custom exceptions
+class SpotifyTrackNotFoundException(Exception):
+    pass
+
+
+class RATrackNotFoundException(Exception):
+    pass
+
+
+class EndOfListException(Exception):
+    pass
+
+
+class SpotifyAPILimitException(Exception):
+    pass
+
+
 # Helper class to convert a DynamoDB item to JSON.
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
@@ -38,6 +55,7 @@ class DecimalEncoder(json.JSONEncoder):
 
 LAMBDA_EXEC_TIME = 110
 STOP_SEARCH = 50
+PLAYLIST_EXPECTED_MAX_LENGTH = 11000
 
 # DB
 dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
@@ -69,7 +87,9 @@ def restore_spotify_token():
 
     token = res['Item']['value']
     with open("/tmp/.cache-"+SPOTIPY_USER, "w+") as f:
-        f.write("%s" % json.dumps(token, ensure_ascii=False, cls=DecimalEncoder))
+        f.write("%s" % json.dumps(token,
+                                  ensure_ascii=False,
+                                  cls=DecimalEncoder))
 
     print 'Restored token: %s' % token
 
@@ -115,7 +135,11 @@ class DecimalEncoder(json.JSONEncoder):
 
 
 def find_on_spotify(sp, ra_name):
-    results = sp.search(ra_name, limit=1, type='track')
+    try:
+        results = sp.search(ra_name, limit=1, type='track')
+    except Exception, e:
+        # stop when Spotify API limit reached
+        raise SpotifyAPILimitException
     for i, t in enumerate(results['tracks']['items']):  # i unused
         return t['uri']
 
@@ -147,29 +171,36 @@ def create_playlist_for_year(sp, year, num=1):
 
 
 def get_playlist(sp, year):
-    return get_last_playlist_for_year(year) or create_playlist_for_year(sp, year)
+    return get_last_playlist_for_year(year) or \
+           create_playlist_for_year(sp, year)
+
+
+def playlist_seems_full(exception, sp, playlist_id):
+    if not (hasattr(exception, 'http_status') and e.http_status in [403, 500]):
+        return False
+    # only query Spotify total as a last resort
+    # https://github.com/spotify/web-api/issues/1179
+    playlist = sp.user_playlist(SPOTIPY_USER, playlist_id, "tracks")
+    total = playlist["tracks"]["total"]
+    return total == PLAYLIST_EXPECTED_MAX_LENGTH
 
 
 def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
     try:
         playlist_id, playlist_num = get_playlist(sp, year)
-        sp.user_playlist_add_tracks(
-            SPOTIPY_USER,
-            playlist_id,
-            [track_spotify_uri])
+        sp.user_playlist_add_tracks(SPOTIPY_USER,
+                                    playlist_id,
+                                    [track_spotify_uri])
     except Exception, e:
-        # if playlist is full, it will be thrown here
-        # this way we don't need to explicitely count items in playlists
-        if hasattr(e, 'http_status') and e.http_status in [403, 500]:
-            playlist_id, = create_playlist_for_year(
-                sp,
-                year,
-                playlist_num+1)
+        if playlist_seems_full(e, sp, playlist_id):
+            playlist_id, = create_playlist_for_year(sp,
+                                                    year,
+                                                    playlist_num+1)
             # retry same fonction to use API limit logic
             add_track_to_spotify_playlist(sp, track_spotify_uri, year)
         else:
             # Reached API limit
-            raise e
+            raise SpotifyAPILimitException
     return playlist_id
 
 
@@ -185,9 +216,7 @@ def get_cursor():
     if 'Item' not in res:
         return 0
 
-    cur = res['Item']['position']
-    print 'Starting at %d' % cur
-    return cur
+    return res['Item']['position']
 
 
 def set_cursor(position):
@@ -197,7 +226,6 @@ def set_cursor(position):
             'position': position
         }
     )
-    print '%s will be the next' % position
 
 
 def get_track_from_dynamodb(track_id):
@@ -250,48 +278,53 @@ def get_min_year(current_track):
     return min_year
 
 
+def handle_index(index, sp):
+    try:
+        current_track = get_track_from_dynamodb(index)
+    except Exception:
+        # no song for that ID
+        raise RATrackNotFoundException
+
+    # if 'playlist_id' not in current_track:
+    if 'spotify_uri' not in current_track:
+        track_uri = find_on_spotify(sp, current_track['name'])
+        if not track_uri:
+            raise SpotifyTrackNotFoundException
+    else:
+        track_uri = current_track['spotify_uri']
+
+    year = get_min_year(current_track)
+    playlist_id = add_track_to_spotify_playlist(sp, track_uri, year)
+    persist_spotify_uris(track_uri, playlist_id, index, current_track, year)
+
+
 def handle(event, context):
     sp = get_spotify()
     now = begin_time = int(time.time())
-    cur = last_successfully_processed_song_id = get_cursor()
+    index = get_cursor()
     missing_song_in_a_row_count = 0
 
     while now < begin_time + LAMBDA_EXEC_TIME:
-        now = int(time.time())
-        cur += 1
-
+        index += 1
         try:
-            current_track = get_track_from_dynamodb(cur)
+            handle_index(index, sp)
             missing_song_in_a_row_count = 0
-        except Exception:
-            # no song for that ID
+        except RATrackNotFoundException as e:
             missing_song_in_a_row_count += 1
             if missing_song_in_a_row_count == STOP_SEARCH:
-                print "Looks like the end of the list"
-                break
+                raise EndOfListException
             continue
-
-        # if 'playlist_id' not in current_track:
-        try:
-            if 'spotify_uri' not in current_track:
-                track_uri = find_on_spotify(sp, current_track['name'])
-                if not track_uri:
-                    continue
-            else:
-                track_uri = current_track['spotify_uri']
-            year = get_min_year(current_track)
-            playlist_id = add_track_to_spotify_playlist(sp,
-                                                        track_uri,
-                                                        year)
-            persist_spotify_uris(track_uri, playlist_id,
-                                 cur, current_track, year)
-        except Exception, e:
-            print e
-            # stop when Spotify API limit reached
+        except SpotifyTrackNotFoundException as e:
+            continue
+        except EndOfListException as e:
+            print 'Looks like the end of the list'
             break
-        last_successfully_processed_song_id = cur
-
-    set_cursor(last_successfully_processed_song_id)
+        except (SpotifyAPILimitException, Exception) as e:
+            print e
+            break
+        finally:
+            now = int(time.time())
+        set_cursor(index)
 
 
 if __name__ == "__main__":
