@@ -14,6 +14,7 @@ sys.path.append(module_path)
 reload(sys)
 sys.setdefaultencoding('utf8')
 
+
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
@@ -60,6 +61,9 @@ class DecimalEncoder(json.JSONEncoder):
 
 
 class TrackName(str):
+    def __new__(cls, content):
+        return str.__new__(cls, ' '.join(content.split()))  # sanitize
+
     def split_artist_and_track_name(self):
         return self.split(" - ", 1)
 
@@ -352,9 +356,8 @@ def handle(event, context):
             missing_song_in_a_row_count += 1
             if missing_song_in_a_row_count == STOP_SEARCH:
                 raise EndOfListException
-            continue
         except SpotifyTrackNotFoundException as e:
-            continue
+            pass
         except EndOfListException as e:
             print 'Looks like the end of the list'
             break
