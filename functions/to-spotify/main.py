@@ -10,9 +10,15 @@ file_path = os.path.dirname(__file__)
 module_path = os.path.join(file_path, "env")
 sys.path.append(module_path)
 
+# https://stackoverflow.com/a/39293287/1515819
+reload(sys)
+sys.setdefaultencoding('utf8')
+
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
+
+from sets import Set
 
 import json
 import decimal
@@ -51,6 +57,21 @@ class DecimalEncoder(json.JSONEncoder):
             else:
                 return int(o)
         return super(DecimalEncoder, self).default(o)
+
+
+class TrackName(str):
+    def split_artist_and_track_name(self):
+        return self.split(" - ", 1)
+
+    @staticmethod
+    def has_question_marks_only(str):
+        allowed_chars = Set('?')
+        return Set(str).issubset(allowed_chars)
+
+    def has_missing_artist_or_name(self):
+        artist, track_name = self.split_artist_and_track_name()
+        return TrackName.has_question_marks_only(artist) or \
+            TrackName.has_question_marks_only(track_name)
 
 
 LAMBDA_EXEC_TIME = 110
@@ -135,8 +156,10 @@ class DecimalEncoder(json.JSONEncoder):
 
 
 def find_on_spotify(sp, ra_name):
+    (artist, track_name) = ra_name
+    query = 'track:"%s"+artist:"%s"' % (track_name, artist)
     try:
-        results = sp.search(ra_name, limit=1, type='track')
+        results = sp.search(query, limit=1, type='track')
     except Exception, e:
         # stop when Spotify API limit reached
         raise SpotifyAPILimitException
@@ -245,25 +268,36 @@ def get_track_from_dynamodb(track_id):
     return res['Item']
 
 
-def persist_spotify_uris(track_uri, playlist_id, cur, current_track, year):
-    print "%s - %s (%d) | %s in %s" % (cur, current_track['name'],
-                                       year, track_uri, playlist_id)
+def add_put_attribute(attributes, attribute_name, attribute_value):
+    if attribute_value:
+        attributes[attribute_name] = {
+            'Value': attribute_value,
+            'Action': 'PUT'
+        }
+    return attributes
+
+
+def persist_track(cur, current_track, year,
+                  track_uri=None,
+                  playlist_id=None,
+                  question_marks=None):
+    attribute_updates = {}
+    add_put_attribute(attribute_updates, 'track_uri', track_uri)
+    add_put_attribute(attribute_updates, 'playlist_id', playlist_id)
+    add_put_attribute(attribute_updates, 'question_marks', question_marks)
+
+    if question_marks:
+        print "%s - %s (%d) | ??????" % (cur, current_track['name'], year)
+    else:
+        print "%s - %s (%d) | %s in %s" % (cur, current_track['name'],
+                                           year, track_uri, playlist_id)
 
     return tracks_table.update_item(
         Key={
             'host': 'ra',
             'id': cur
         },
-        AttributeUpdates={
-            'track_uri': {
-                'Value': track_uri,
-                'Action': 'PUT'
-            },
-            'playlist_id': {
-                'Value': playlist_id,
-                'Action': 'PUT'
-            }
-        }
+        AttributeUpdates=attribute_updates
     )
 
 
@@ -282,20 +316,25 @@ def handle_index(index, sp):
     try:
         current_track = get_track_from_dynamodb(index)
     except Exception:
-        # no song for that ID
         raise RATrackNotFoundException
-
-    # if 'playlist_id' not in current_track:
-    if 'spotify_uri' not in current_track:
-        track_uri = find_on_spotify(sp, current_track['name'])
-        if not track_uri:
-            raise SpotifyTrackNotFoundException
-    else:
-        track_uri = current_track['spotify_uri']
-
+    track = TrackName(current_track['name'])
     year = get_min_year(current_track)
-    playlist_id = add_track_to_spotify_playlist(sp, track_uri, year)
-    persist_spotify_uris(track_uri, playlist_id, index, current_track, year)
+    if track.has_missing_artist_or_name():
+        persist_track(index, current_track, year, question_marks=True)
+    else:
+        # if 'playlist_id' not in current_track:
+        if 'spotify_uri' not in current_track:
+            track_uri = find_on_spotify(sp,
+                                        track.split_artist_and_track_name())
+            if not track_uri:
+                raise SpotifyTrackNotFoundException
+        else:
+            track_uri = current_track['spotify_uri']
+
+        playlist_id = add_track_to_spotify_playlist(sp, track_uri, year)
+        persist_track(index, current_track, year,
+                      track_uri=track_uri,
+                      playlist_id=playlist_id)
 
 
 def handle(event, context):
@@ -319,7 +358,7 @@ def handle(event, context):
         except EndOfListException as e:
             print 'Looks like the end of the list'
             break
-        except (SpotifyAPILimitException, Exception) as e:
+        except SpotifyAPILimitException as e:
             print e
             break
         finally:
