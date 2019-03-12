@@ -1,3 +1,7 @@
+### Purpose
+
+Fetches and stores all track names from `https://residentadvisor.net/tracks/{i}` where `i` goes from [`1`](https://residentadvisor.net/tracks/1) to +∞
+
 ### Run locally
 
     virtualenv ./.venv
@@ -13,10 +17,11 @@
 
 ### AWS prerequesites
 
- - DynamoDB table:
-    - name: `any_tracks`
-    - partition key: `host` (string)
-    - sort key: `id` (decimal)
+- DynamoDB table:
+   - CursorsTable
+     - name: `any_tracks`
+        - partition key: `host` (string)
+        - sort key: `id` (decimal)
  - IAM role:
     - name: `apex_lambda_function`
     - permissions: IAM, DynamoDB, Lambda

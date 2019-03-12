@@ -1,3 +1,8 @@
+### Purpose
+
+- Indefinitely search for stored songs on Spotify
+- Create yearly Spotify playlists and add songs to them
+
 ### Generate a Spotify token
 
 Before running locally or deploying this, use `token_gen.py` to generate and store a Spotify token into DynamoDB.

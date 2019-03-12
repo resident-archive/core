@@ -1,20 +1,23 @@
-# RA-tracks
+# Resident Archive
 
-Up-to-date Spotify playlists for [residentadvisor.net](https://residentadvisor.net)'s community-made music library.
+Resident Archive keeps the entire [RA](https://residentadvisor.net) music collection in sync with Spotify:
 
-## λ1 – From Resident Advisor
+## Features
 
- - Gets and stores all track names from https://residentadvisor.net/tracks
- - Triggers λ2 for each entry
+Automatically builds yearly Spotify playlists from:
 
-Triggered by `CRON(1 minute)` and once all songs are found, `CRON(1 hour)`.
+   - up to 1M existing RA songs
+      - https://www.residentadvisor.net/tracks/1
+      - ...
+      - https://www.residentadvisor.net/tracks/940000
+      - ...
+   - daily new RA songs
+      - https://www.residentadvisor.net/tracks
+   - previously unreleased RA songs that were released on Spotify today
 
-## λ2 – To Spotify
+## How it works
 
- - Indefinitely search for stored songs on Spotify
- - Create yearly playlists and add songs to them
+2 CRON jobs running on AWS Lambda:
 
-Triggered by:
-
- - `CRON(5 minutes)`
- - λ1
+ - λ1 [`from-residentadvisor`](functions/from-residentadvisor/README.md)
+ - λ2 [`to-spotify`](functions/to-spotify/README.md)
