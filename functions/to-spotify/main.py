@@ -14,7 +14,6 @@ sys.path.append(module_path)
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
@@ -42,10 +41,6 @@ class RATrackNotFoundException(Exception):
 
 
 class EndOfListException(Exception):
-    pass
-
-
-class SpotifyAPILimitException(Exception):
     pass
 
 
@@ -110,7 +105,6 @@ def restore_spotify_token():
         ]
     )
     if 'Item' not in res:
-        print res
         return 0
 
     token = res['Item']['value']
@@ -205,8 +199,8 @@ def get_playlist(sp, year):
            create_playlist_for_year(sp, year)
 
 
-def playlist_seems_full(exception, sp, playlist_id):
-    if not (hasattr(exception, 'http_status') and e.http_status in [403, 500]):
+def playlist_seems_full(e, sp, playlist_id):
+    if not (hasattr(e, 'http_status') and e.http_status in [403, 500]):
         return False
     # only query Spotify total as a last resort
     # https://github.com/spotify/web-api/issues/1179
@@ -221,7 +215,7 @@ def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
         sp.user_playlist_add_tracks(SPOTIPY_USER,
                                     playlist_id,
                                     [track_spotify_uri])
-    except Exception, e:
+    except Exception as e:
         if playlist_seems_full(e, sp, playlist_id):
             playlist_id, = create_playlist_for_year(sp,
                                                     year,
@@ -229,8 +223,8 @@ def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
             # retry same fonction to use API limit logic
             add_track_to_spotify_playlist(sp, track_spotify_uri, year)
         else:
-            # Reached API limit
-            raise SpotifyAPILimitException
+            # Reached API limit?
+            raise e
     return playlist_id
 
 
@@ -364,10 +358,6 @@ def handle(event, context):
         except SpotifyTrackNotFoundException as e:
             pass
         except EndOfListException as e:
-            print 'Looks like the end of the list'
-            break
-        except SpotifyAPILimitException as e:
-            print e
             break
         finally:
             now = int(time.time())
