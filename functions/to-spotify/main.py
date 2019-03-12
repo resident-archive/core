@@ -73,7 +73,10 @@ class TrackName(str):
         return Set(str).issubset(allowed_chars)
 
     def has_missing_artist_or_name(self):
-        artist, track_name = self.split_artist_and_track_name()
+        try:
+            artist, track_name = self.split_artist_and_track_name()
+        except Exception as e:
+            return True
         return TrackName.has_question_marks_only(artist) or \
             TrackName.has_question_marks_only(track_name)
 
@@ -321,8 +324,10 @@ def handle_index(index, sp):
         current_track = get_track_from_dynamodb(index)
     except Exception:
         raise RATrackNotFoundException
+
     track = TrackName(current_track['name'])
     year = get_min_year(current_track)
+
     if track.has_missing_artist_or_name():
         persist_track(index, current_track, year, question_marks=True)
     else:
