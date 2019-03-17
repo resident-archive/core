@@ -57,7 +57,9 @@ class DecimalEncoder(json.JSONEncoder):
 
 class TrackName(str):
     def __new__(cls, content):
-        return str.__new__(cls, ' '.join(content.split()))  # sanitize
+        content = ' '.join(content.split())    # sanitize new lines/tabs
+        content = content.replace('\x00', '')  # sanitize null bytes
+        return str.__new__(cls, content)
 
     def split_artist_and_track_name(self):
         return self.split(" - ", 1)
@@ -156,15 +158,10 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(o)
 
 
-def find_on_spotify(sp, ra_name):
-    (artist, track_name) = ra_name
-    query = 'track:"%s"+artist:"%s"' % (track_name, artist)
-    try:
-        results = sp.search(query, limit=1, type='track')
-    except Exception, e:
-        # stop when Spotify API limit reached
-        raise SpotifyAPILimitException
-    for i, t in enumerate(results['tracks']['items']):  # i unused
+def find_on_spotify(sp, artist_and_track):
+    query = 'track:"{0[1]}"+artist:"{0[0]}"'.format(artist_and_track)
+    results = sp.search(query, limit=1, type='track')
+    for _, t in enumerate(results['tracks']['items']):
         return t['uri']
 
 
