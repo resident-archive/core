@@ -81,6 +81,7 @@ class TrackName(str):
 LAMBDA_EXEC_TIME = 110
 STOP_SEARCH = 50
 PLAYLIST_EXPECTED_MAX_LENGTH = 11000
+MIN_YEAR = 2006
 
 # DB
 dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
@@ -302,12 +303,10 @@ def persist_track(cur, current_track, year,
 def get_min_year(current_track):
     release_date_year = current_track['release_date_year']
     if 'first_charted_year' not in current_track:
-        return release_date_year
-    min_year = min(release_date_year, current_track['first_charted_year'])
-    if min_year < 2006:
-        print min_year
-        return 2006
-    return min_year
+        min_year = release_date_year
+    else:
+        min_year = min(release_date_year, current_track['first_charted_year'])
+    return MIN_YEAR if min_year < MIN_YEAR else min_year
 
 
 def handle_index(index, sp):
