@@ -32,11 +32,11 @@ import spotipy.oauth2 as oauth2
 
 
 # custom exceptions
-class SpotifyTrackNotFoundException(Exception):
+class RATrackNotFoundException(Exception):
     pass
 
 
-class RATrackNotFoundException(Exception):
+class SpotifyAPILimitReached(Exception):
     pass
 
 
@@ -72,6 +72,29 @@ class TrackName(str):
             return True
         return TrackName.has_question_marks_only(artist) or \
             TrackName.has_question_marks_only(track_name)
+
+
+class Memoize:
+    def __init__(self, f):
+        self.f = f
+        self.memo = {}
+
+    def __call__(self, *args):
+        if args not in self.memo:
+            self.memo[args] = self.f(*args)
+
+        return self.memo[args]
+
+
+# Helper class to convert a DynamoDB item to JSON.
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, decimal.Decimal):
+            if o % 1 > 0:
+                return float(o)
+            else:
+                return int(o)
+        return super(DecimalEncoder, self).default(o)
 
 
 LAMBDA_EXEC_TIME = 110
@@ -155,22 +178,14 @@ def get_spotify():
     return spotipy.Spotify(auth=token_info['access_token'])
 
 
-# Helper class to convert a DynamoDB item to JSON.
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, decimal.Decimal):
-            if o % 1 > 0:
-                return float(o)
-            else:
-                return int(o)
-        return super(DecimalEncoder, self).default(o)
-
-
 def find_on_spotify(sp, artist_and_track):
     query = 'track:"{0[1]}"+artist:"{0[0]}"'.format(artist_and_track)
-    results = sp.search(query, limit=1, type='track')
-    for _, t in enumerate(results['tracks']['items']):
-        return t['uri']
+    try:
+        results = sp.search(query, limit=1, type='track')
+        for _, t in enumerate(results['tracks']['items']):
+            return t['uri']
+    except Exception as e:
+        raise e
 
 
 def get_last_playlist_for_year(year):
@@ -327,20 +342,14 @@ def handle_index(index, sp):
 
     if track.has_missing_artist_or_name():
         persist_track(index, current_track, year, question_marks=True)
-    else:
-        # if 'playlist_id' not in current_track:
-        if 'spotify_uri' not in current_track:
-            track_uri = find_on_spotify(sp,
-                                        track.split_artist_and_track_name())
-            if not track_uri:
-                raise SpotifyTrackNotFoundException
-        else:
-            track_uri = current_track['spotify_uri']
-
-        playlist_id = add_track_to_spotify_playlist(sp, track_uri, year)
-        persist_track(index, current_track, year,
-                      track_uri=track_uri,
-                      playlist_id=playlist_id)
+    elif not ('track_uri' in current_track or
+              'question_marks' in current_track):
+        track_uri = find_on_spotify(sp, track.split_artist_and_track_name())
+        if track_uri:
+            playlist_id = add_track_to_spotify_playlist(sp, track_uri, year)
+            persist_track(index, current_track, year,
+                          track_uri=track_uri,
+                          playlist_id=playlist_id)
 
 
 def handle(event, context):
@@ -353,11 +362,12 @@ def handle(event, context):
         try:
             handle_index(index, sp)
         except RATrackNotFoundException as e:
-            last_id = get_last_parsed_track(tracks_table)
+            last_id = get_last_parsed_track(tracks_table)  # memoized
             if index >= last_id:
                 index = 0
-        except SpotifyTrackNotFoundException as e:
-            pass
+        except Exception as e:
+            print e
+            break
         finally:
             now = int(time.time())
         set_cursor(index)
