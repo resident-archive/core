@@ -40,10 +40,6 @@ class RATrackNotFoundException(Exception):
     pass
 
 
-class EndOfListException(Exception):
-    pass
-
-
 # Helper class to convert a DynamoDB item to JSON.
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
@@ -79,7 +75,6 @@ class TrackName(str):
 
 
 LAMBDA_EXEC_TIME = 110
-STOP_SEARCH = 50
 PLAYLIST_EXPECTED_MAX_LENGTH = 11000
 MIN_YEAR = 2006
 
@@ -96,6 +91,18 @@ SPOTIPY_USER = os.getenv('SPOTIPY_USER')
 SPOTIPY_REDIRECT_URI = 'http://localhost/'
 
 scope = 'playlist-read-private playlist-modify-private playlist-modify-public'
+
+
+@Memoize
+def get_last_parsed_track(table):
+    res = table.query(
+        ScanIndexForward=False,
+        KeyConditionExpression=Key('host').eq('ra'),
+        Limit=1
+    )
+    if res['Count'] == 0:
+        return 0
+    return res['Items'][0]['id']
 
 
 def restore_spotify_token():
@@ -340,21 +347,17 @@ def handle(event, context):
     sp = get_spotify()
     now = begin_time = int(time.time())
     index = get_cursor()
-    missing_song_in_a_row_count = 0
 
     while now < begin_time + LAMBDA_EXEC_TIME:
         index += 1
         try:
             handle_index(index, sp)
-            missing_song_in_a_row_count = 0
         except RATrackNotFoundException as e:
-            missing_song_in_a_row_count += 1
-            if missing_song_in_a_row_count == STOP_SEARCH:
-                raise EndOfListException
+            last_id = get_last_parsed_track(tracks_table)
+            if index >= last_id:
+                index = 0
         except SpotifyTrackNotFoundException as e:
             pass
-        except EndOfListException as e:
-            break
         finally:
             now = int(time.time())
         set_cursor(index)
