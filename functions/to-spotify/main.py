@@ -105,6 +105,7 @@ MIN_YEAR = 2006
 dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
 cursors_table = dynamodb.Table('ra_cursors')
 tracks_table = dynamodb.Table('any_tracks')
+duplicates_table = dynamodb.Table('any_duplicates')
 playlists_table = dynamodb.Table('ra_playlists')
 
 # Spotify
@@ -196,7 +197,7 @@ def get_last_playlist_for_year(year):
     )
     if res['Count'] == 0:
         return
-    return [res['Items'][0]['playlist_id'], res['Items'][0]['num']]
+    return [res['Items'][0]['spotify_playlist'], res['Items'][0]['num']]
 
 
 def create_playlist_for_year(sp, year, num=1):
@@ -208,7 +209,7 @@ def create_playlist_for_year(sp, year, num=1):
         Item={
             'year': year,
             'num': num,
-            'playlist_id': res['id']
+            'spotify_playlist': res['id']
         }
     )
     return [res['id'], num]
@@ -219,33 +220,33 @@ def get_playlist(sp, year):
            create_playlist_for_year(sp, year)
 
 
-def playlist_seems_full(e, sp, playlist_id):
+def playlist_seems_full(e, sp, spotify_playlist):
     if not (hasattr(e, 'http_status') and e.http_status in [403, 500]):
         return False
     # only query Spotify total as a last resort
     # https://github.com/spotify/web-api/issues/1179
-    playlist = sp.user_playlist(SPOTIPY_USER, playlist_id, "tracks")
+    playlist = sp.user_playlist(SPOTIPY_USER, spotify_playlist, "tracks")
     total = playlist["tracks"]["total"]
     return total == PLAYLIST_EXPECTED_MAX_LENGTH
 
 
 def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
     try:
-        playlist_id, playlist_num = get_playlist(sp, year)
+        spotify_playlist, playlist_num = get_playlist(sp, year)
         sp.user_playlist_add_tracks(SPOTIPY_USER,
-                                    playlist_id,
+                                    spotify_playlist,
                                     [track_spotify_uri])
     except Exception as e:
-        if playlist_seems_full(e, sp, playlist_id):
-            playlist_id, = create_playlist_for_year(sp,
-                                                    year,
-                                                    playlist_num+1)
+        if playlist_seems_full(e, sp, spotify_playlist):
+            spotify_playlist, = create_playlist_for_year(sp,
+                                                         year,
+                                                         playlist_num+1)
             # retry same fonction to use API limit logic
             add_track_to_spotify_playlist(sp, track_spotify_uri, year)
         else:
             # Reached API limit?
             raise e
-    return playlist_id
+    return spotify_playlist
 
 
 def get_cursor():
@@ -279,11 +280,11 @@ def get_track_from_dynamodb(track_id):
             'id': track_id
         },
         AttributesToGet=[
-            'track_uri',
+            'spotify_track',
             'name',
             'first_charted_year',
             'release_date_year',
-            'playlist_id'
+            'spotify_playlist'
         ]
     )
     return res['Item']
@@ -299,19 +300,21 @@ def add_put_attribute(attributes, attribute_name, attribute_value):
 
 
 def persist_track(cur, current_track, year,
-                  track_uri=None,
-                  playlist_id=None,
-                  question_marks=None):
+                  spotify_track=None,
+                  spotify_playlist=None,
+                  question_marks=None,
+                  duplicate=None):
     attribute_updates = {}
-    add_put_attribute(attribute_updates, 'track_uri', track_uri)
-    add_put_attribute(attribute_updates, 'playlist_id', playlist_id)
+    add_put_attribute(attribute_updates, 'spotify_track', spotify_track)
+    add_put_attribute(attribute_updates, 'spotify_playlist', spotify_playlist)
     add_put_attribute(attribute_updates, 'question_marks', question_marks)
 
-    if question_marks:
-        print "%s - %s (%d) | ??????" % (cur, current_track['name'], year)
-    else:
-        print "%s - %s (%d) | %s in %s" % (cur, current_track['name'],
-                                           year, track_uri, playlist_id)
+    str_track_info = "%s - %s (%d)" % (cur, current_track['name'], year)
+    str_spotify_info = ("??????"
+                        if question_marks
+                        else "%s in %s" % (spotify_track, spotify_playlist))
+    str_duplicate = "(duplicate)" if duplicate else ""
+    print "%s | %s %s" % (str_track_info, str_spotify_info, str_duplicate)
 
     return tracks_table.update_item(
         Key={
@@ -331,6 +334,31 @@ def get_min_year(current_track):
     return MIN_YEAR if min_year < MIN_YEAR else min_year
 
 
+def get_duplicate_track_playlist(spotify_track):
+    res = duplicates_table.get_item(
+        Key={
+            'host': 'ra',
+            'value': spotify_track
+        },
+        AttributesToGet=[
+            'spotify_playlist'
+        ]
+    )
+    if 'Item' not in res:
+        return False
+    return res['Item']['spotify_playlist']
+
+
+def add_track_to_duplicate_index(spotify_track, spotify_playlist):
+    duplicates_table.put_item(
+        Item={
+            'host': 'ra',
+            'value': spotify_track,
+            'spotify_playlist': spotify_playlist
+        }
+    )
+
+
 def handle_index(index, sp):
     try:
         current_track = get_track_from_dynamodb(index)
@@ -342,14 +370,24 @@ def handle_index(index, sp):
 
     if track.has_missing_artist_or_name():
         persist_track(index, current_track, year, question_marks=True)
-    elif not ('track_uri' in current_track or
+    elif not ('spotify_track' in current_track or
               'question_marks' in current_track):
-        track_uri = find_on_spotify(sp, track.split_artist_and_track_name())
-        if track_uri:
-            playlist_id = add_track_to_spotify_playlist(sp, track_uri, year)
+        spotify_track = find_on_spotify(sp,
+                                        track.split_artist_and_track_name())
+        if spotify_track:
+            spotify_playlist = get_duplicate_track_playlist(spotify_track)
+            if not spotify_playlist:
+                duplicate = None
+                spotify_playlist = add_track_to_spotify_playlist(sp,
+                                                                 spotify_track,
+                                                                 year)
+                add_track_to_duplicate_index(spotify_track, spotify_playlist)
+            else:
+                duplicate = True
             persist_track(index, current_track, year,
-                          track_uri=track_uri,
-                          playlist_id=playlist_id)
+                          spotify_track=spotify_track,
+                          spotify_playlist=spotify_playlist,
+                          duplicate=duplicate)
 
 
 def handle(event, context):
