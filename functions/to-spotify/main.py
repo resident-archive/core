@@ -97,11 +97,12 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(o)
 
 
-LAMBDA_EXEC_TIME = 110
+LAMBDA_EXEC_TIME = 11
 PLAYLIST_EXPECTED_MAX_LENGTH = 11000
 MIN_YEAR = 2006
 
 # DB
+client = boto3.client("dynamodb", region_name='eu-west-1')
 dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
 cursors_table = dynamodb.Table('ra_cursors')
 tracks_table = dynamodb.Table('any_tracks')
@@ -310,13 +311,12 @@ def persist_track(cur, current_track, year,
     add_put_attribute(attribute_updates, 'question_marks', question_marks)
 
     str_track_info = "%s - %s (%d)" % (cur, current_track['name'], year)
-    str_spotify_info = ("??????"
-                        if question_marks
+    str_spotify_info = ("??????" if question_marks
+                        else "duplicate" if duplicate
                         else "%s in %s" % (spotify_track, spotify_playlist))
-    str_duplicate = "(duplicate)" if duplicate else ""
-    print "%s | %s %s" % (str_track_info, str_spotify_info, str_duplicate)
+    print "%s | %s" % (str_track_info, str_spotify_info)
 
-    return tracks_table.update_item(
+    tracks_table.update_item(
         Key={
             'host': 'ra',
             'id': cur
@@ -376,29 +376,58 @@ def handle_index(index, sp):
                                         track.split_artist_and_track_name())
         if spotify_track:
             spotify_playlist = get_duplicate_track_playlist(spotify_track)
-            if not spotify_playlist:
+            if spotify_playlist:
+                duplicate = True
+                persist_track(index, current_track, year, duplicate=duplicate)
+            else:
                 duplicate = None
                 spotify_playlist = add_track_to_spotify_playlist(sp,
                                                                  spotify_track,
                                                                  year)
                 add_track_to_duplicate_index(spotify_track, spotify_playlist)
-            else:
-                duplicate = True
-            persist_track(index, current_track, year,
-                          spotify_track=spotify_track,
-                          spotify_playlist=spotify_playlist,
-                          duplicate=duplicate)
+                persist_track(index, current_track, year,
+                              spotify_track=spotify_track,
+                              spotify_playlist=spotify_playlist)
+                return spotify_track
+
+
+def get_table_count(table_name):
+    return client.describe_table(TableName=table_name)["Table"]["ItemCount"]
+
+
+def generate_stats(last_spotify_uri, now):
+    if not last_spotify_uri:
+        return
+    data = {}
+    data['spotify_last_uri'] = last_spotify_uri
+    data['spotify_last_find_time'] = now
+    data['total_ra_songs'] = get_table_count("any_tracks")
+    data['total_spotify_songs'] = get_table_count("any_duplicates")
+    data['total_playlists'] = get_table_count("ra_playlists")
+    data['ratio_ra_spotify'] = 100 \
+        * data['total_spotify_songs'] \
+        / data['total_ra_songs']
+    print data
+    encoded_json = bytes(json.dumps(data).encode('UTF-8'))
+    bucket_name = "resident-archive"
+    file_name = "ra-stats.json"
+    lambda_path = "/tmp/" + file_name
+    s3_path = file_name
+    s3 = boto3.resource("s3")
+    s3.Bucket(bucket_name).put_object(Key=s3_path, Body=encoded_json)
 
 
 def handle(event, context):
     sp = get_spotify()
     now = begin_time = int(time.time())
     index = get_cursor()
+    last_spotify_uri = None
 
     while now < begin_time + LAMBDA_EXEC_TIME:
         index += 1
         try:
-            handle_index(index, sp)
+            last_spotify_uri = handle_index(index, sp) \
+                               or last_spotify_uri  # ignore None
         except RATrackNotFoundException as e:
             last_id = get_last_parsed_track(tracks_table)  # memoized
             if index >= last_id:
@@ -409,6 +438,7 @@ def handle(event, context):
         finally:
             now = int(time.time())
         set_cursor(index)
+    generate_stats(last_spotify_uri, now)
 
 
 if __name__ == "__main__":
