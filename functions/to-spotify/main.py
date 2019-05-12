@@ -97,9 +97,10 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(o)
 
 
-LAMBDA_EXEC_TIME = 11
+LAMBDA_EXEC_TIME = 110
 PLAYLIST_EXPECTED_MAX_LENGTH = 11000
 MIN_YEAR = 2006
+WEBSITE = "https://residentarchive.github.io"
 
 # DB
 client = boto3.client("dynamodb", region_name='eu-west-1')
@@ -205,7 +206,9 @@ def create_playlist_for_year(sp, year, num=1):
     playlist_name = 'RA: %d' % year
     if num > 1:
         playlist_name += ' (%d)' % num
-    res = sp.user_playlist_create(SPOTIPY_USER, playlist_name, public=True)
+    res = sp.user_playlist_create(SPOTIPY_USER, playlist_name,
+                                  public=True,
+                                  description=WEBSITE)
     playlists_table.put_item(
         Item={
             'year': year,
