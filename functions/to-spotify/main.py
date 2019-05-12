@@ -100,7 +100,7 @@ class DecimalEncoder(json.JSONEncoder):
 LAMBDA_EXEC_TIME = 110
 PLAYLIST_EXPECTED_MAX_LENGTH = 11000
 MIN_YEAR = 2006
-WEBSITE = "https://residentarchive.github.io"
+WEBSITE = "https://resident-archive.github.io"
 
 # DB
 client = boto3.client("dynamodb", region_name='eu-west-1')

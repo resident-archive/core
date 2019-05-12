@@ -1,6 +1,6 @@
 # Resident Archive
 
-https://residentarchive.github.io
+https://resident-archive.github.io
 
 Resident Archive keeps the entire [RA](https://residentadvisor.net) music collection in sync with Spotify:
 
