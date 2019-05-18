@@ -207,8 +207,7 @@ def create_playlist_for_year(sp, year, num=1):
     if num > 1:
         playlist_name += ' (%d)' % num
     res = sp.user_playlist_create(SPOTIPY_USER, playlist_name,
-                                  public=True,
-                                  description=WEBSITE)
+                                  public=True)
     playlists_table.put_item(
         Item={
             'year': year,
@@ -420,29 +419,44 @@ def generate_stats(last_spotify_uri, now):
     s3.Bucket(bucket_name).put_object(Key=s3_path, Body=encoded_json)
 
 
+def parse_event_song(record):
+    if record['eventSource'] == "aws:dynamodb" \
+       and record['eventName'] == "INSERT":
+        return int(record['dynamodb']['Keys']['id']['N'])
+
+
 def handle(event, context):
     sp = get_spotify()
-    now = begin_time = int(time.time())
-    index = get_cursor()
+    now = int(time.time())
     last_spotify_uri = None
 
-    while now < begin_time + LAMBDA_EXEC_TIME:
-        index += 1
-        try:
-            last_spotify_uri = handle_index(index, sp) \
-                               or last_spotify_uri  # ignore None
-        except RATrackNotFoundException as e:
-            last_id = get_last_parsed_track(tracks_table)  # memoized
-            if index >= last_id:
-                index = 0
-        except Exception as e:
-            print e
-            break
-        finally:
-            now = int(time.time())
-        set_cursor(index)
+    if 'Records' in event:
+        for record in event['Records']:
+            new_song_id = parse_event_song(record)
+            last_spotify_uri = (handle_index(new_song_id, sp)
+                                or last_spotify_uri)
+    else:
+        index = get_cursor()
+
+        begin_time = now
+        while now < begin_time + LAMBDA_EXEC_TIME:
+            index += 1
+            try:
+                last_spotify_uri = (handle_index(index, sp)
+                                    or last_spotify_uri)  # ignore None
+            except RATrackNotFoundException as e:
+                last_id = get_last_parsed_track(tracks_table)  # memoized
+                if index >= last_id:
+                    index = 0
+            except Exception as e:
+                print e
+                break
+            finally:
+                now = int(time.time())
+            set_cursor(index)
     generate_stats(last_spotify_uri, now)
 
 
 if __name__ == "__main__":
     print handle({}, {})
+    # print handle({u'Records': [{u'eventID': u'7d3a0eeea532a920df49b37f63912dd7', u'eventVersion': u'1.1', u'dynamodb': {u'SequenceNumber': u'490449600000000013395897450', u'Keys': {u'host': {u'S': u'ra'}, u'id': {u'N': u'956790'}}, u'SizeBytes': 103, u'NewImage': {u'added': {u'N': u'1558178609'}, u'name': {u'S': u'Markus Homm - Discovery'}, u'host': {u'S': u'ra'}, u'first_charted_year': {u'N': u'2019'}, u'release_date_year': {u'N': u'2019'}, u'id': {u'N': u'956790'}}, u'ApproximateCreationDateTime': 1558178610.0, u'StreamViewType': u'NEW_AND_OLD_IMAGES'}, u'awsRegion': u'eu-west-1', u'eventName': u'INSERT', u'eventSourceARN': u'arn:aws:dynamodb:eu-west-1:705440408593:table/any_tracks/stream/2019-05-06T10:02:12.102', u'eventSource': u'aws:dynamodb'}]}, {})
