@@ -287,7 +287,10 @@ def get_track_from_dynamodb(track_id):
             'name',
             'first_charted_year',
             'release_date_year',
-            'spotify_playlist'
+            'spotify_playlist',
+            'question_marks',
+            'duplicate',
+            'spotify'
         ]
     )
     return res['Item']
@@ -311,6 +314,7 @@ def persist_track(cur, current_track, year,
     add_put_attribute(attribute_updates, 'spotify_track', spotify_track)
     add_put_attribute(attribute_updates, 'spotify_playlist', spotify_playlist)
     add_put_attribute(attribute_updates, 'question_marks', question_marks)
+    add_put_attribute(attribute_updates, 'duplicate', duplicate)
 
     str_track_info = "%s - %s (%d)" % (cur, current_track['name'], year)
     str_spotify_info = ("??????" if question_marks
@@ -370,19 +374,19 @@ def handle_index(index, sp):
     track = TrackName(current_track['name'])
     year = get_min_year(current_track)
 
+    if 'spotify_track' in current_track or \
+       'question_marks' in current_track or \
+       'duplicate' in current_track:
+        return
     if track.has_missing_artist_or_name():
         persist_track(index, current_track, year, question_marks=True)
-    elif not ('spotify_track' in current_track or
-              'question_marks' in current_track):
+    else:
         spotify_track = find_on_spotify(sp,
                                         track.split_artist_and_track_name())
-        if spotify_track:
-            spotify_playlist = get_duplicate_track_playlist(spotify_track)
-            if spotify_playlist:
-                duplicate = True
-                persist_track(index, current_track, year, duplicate=duplicate)
+        if (spotify_track):
+            if get_duplicate_track_playlist(spotify_track):
+                persist_track(index, current_track, year, duplicate=True)
             else:
-                duplicate = None
                 spotify_playlist = add_track_to_spotify_playlist(sp,
                                                                  spotify_track,
                                                                  year)
@@ -431,11 +435,16 @@ def handle(event, context):
     last_spotify_uri = None
 
     if 'Records' in event:
+        # Process last RA tracks added to DynamoDB stream
         for record in event['Records']:
             new_song_id = parse_event_song(record)
-            last_spotify_uri = (handle_index(new_song_id, sp)
-                                or last_spotify_uri)
+            try:
+                last_spotify_uri = (handle_index(new_song_id, sp)
+                                    or last_spotify_uri)
+            except RATrackNotFoundException as e:
+                pass
     else:
+        # Indefinitely Loop over all tracks from start to end
         index = get_cursor()
 
         begin_time = now
@@ -448,9 +457,6 @@ def handle(event, context):
                 last_id = get_last_parsed_track(tracks_table)  # memoized
                 if index >= last_id:
                     index = 0
-            except Exception as e:
-                print e
-                break
             finally:
                 now = int(time.time())
             set_cursor(index)
