@@ -51,6 +51,18 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(o)
 
 
+class Memoize:
+    def __init__(self, f):
+        self.f = f
+        self.memo = {}
+
+    def __call__(self, *args):
+        if args not in self.memo:
+            self.memo[args] = self.f(*args)
+
+        return self.memo[args]
+
+
 class TrackName(str):
     def __new__(cls, content):
         content = ' '.join(content.split())    # sanitize new lines/tabs
@@ -72,18 +84,6 @@ class TrackName(str):
             return True
         return TrackName.has_question_marks_only(artist) or \
             TrackName.has_question_marks_only(track_name)
-
-
-class Memoize:
-    def __init__(self, f):
-        self.f = f
-        self.memo = {}
-
-    def __call__(self, *args):
-        if args not in self.memo:
-            self.memo[args] = self.f(*args)
-
-        return self.memo[args]
 
 
 # Helper class to convert a DynamoDB item to JSON.
@@ -383,7 +383,7 @@ def handle_index(index, sp):
     else:
         spotify_track = find_on_spotify(sp,
                                         track.split_artist_and_track_name())
-        if (spotify_track):
+        if spotify_track:
             if get_duplicate_track_playlist(spotify_track):
                 persist_track(index, current_track, year, duplicate=True)
             else:
