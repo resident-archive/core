@@ -21,7 +21,7 @@ Before running locally or deploying this, use `token_gen.py` to generate and sto
 Fill in `./functions/to-spotify/env.json` with `SPOTIPY_CLIENT_ID` and `SPOTIPY_CLIENT_SECRET`, and then:
 
     apex build to-spotify
-    apex deploy to-spotify --region eu-west-1
+    apex deploy to-spotify --region eu-west-1 -ldebug --env-file ./functions/to-spotify/env.json
 
 ### AWS prerequesites
 

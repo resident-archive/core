@@ -142,9 +142,6 @@ def restore_spotify_token():
 
 
 def store_spotify_token(token_info):
-    if not token_info:
-        print("Did not store null token")
-        return
     cursors_table.put_item(
         Item={
             'name': 'token',
@@ -166,7 +163,8 @@ def get_spotify():
         )
 
     token_info = sp_oauth.get_cached_token()
-
+    if not token_info:
+        raise(Exception('null token_info'))
     store_spotify_token(token_info)
 
     return spotipy.Spotify(auth=token_info['access_token'])
@@ -232,7 +230,7 @@ def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
                                     [track_spotify_uri])
     except Exception as e:
         if playlist_seems_full(e, sp, spotify_playlist):
-            spotify_playlist, = create_playlist_for_year(sp,
+            spotify_playlist, _ = create_playlist_for_year(sp,
                                                          year,
                                                          playlist_num+1)
             # retry same fonction to use API limit logic
@@ -432,7 +430,7 @@ def handle(event, context):
             try:
                 last_spotify_uri = (handle_index(new_song_id, sp)
                                     or last_spotify_uri)
-            except RATrackNotFoundException as e:
+            except RATrackNotFoundException:
                 pass
     else:
         # Indefinitely Loop over all tracks from start to end
