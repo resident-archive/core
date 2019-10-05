@@ -42,7 +42,7 @@ class SpotifyAPILimitReached(Exception):
 
 # Helper class to convert a DynamoDB item to JSON.
 class DecimalEncoder(json.JSONEncoder):
-    def default(self, o):
+    def default(self, o): # pylint: disable=E0202
         if isinstance(o, decimal.Decimal):
             if o % 1 > 0:
                 return float(o)
@@ -80,21 +80,10 @@ class TrackName(str):
     def has_missing_artist_or_name(self):
         try:
             artist, track_name = self.split_artist_and_track_name()
-        except Exception as e:
+        except Exception:
             return True
         return TrackName.has_question_marks_only(artist) or \
             TrackName.has_question_marks_only(track_name)
-
-
-# Helper class to convert a DynamoDB item to JSON.
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, decimal.Decimal):
-            if o % 1 > 0:
-                return float(o)
-            else:
-                return int(o)
-        return super(DecimalEncoder, self).default(o)
 
 
 LAMBDA_EXEC_TIME = 110
@@ -149,17 +138,20 @@ def restore_spotify_token():
                                   ensure_ascii=False,
                                   cls=DecimalEncoder))
 
-    print 'Restored token: %s' % token
+    print("Restored token: %s" % token)
 
 
 def store_spotify_token(token_info):
+    if not token_info:
+        print("Did not store null token")
+        return
     cursors_table.put_item(
         Item={
             'name': 'token',
             'value': token_info
         }
     )
-    print "Stored token: %s" % token_info
+    print("Stored token: %s" % token_info)
 
 
 def get_spotify():
@@ -174,7 +166,6 @@ def get_spotify():
         )
 
     token_info = sp_oauth.get_cached_token()
-    token_info = sp_oauth.refresh_access_token(token_info['refresh_token'])
 
     store_spotify_token(token_info)
 
@@ -320,7 +311,7 @@ def persist_track(cur, current_track, year,
     str_spotify_info = ("??????" if question_marks
                         else "duplicate" if duplicate
                         else "%s in %s" % (spotify_track, spotify_playlist))
-    print "%s | %s" % (str_track_info, str_spotify_info)
+    print("%s | %s" % (str_track_info, str_spotify_info))
 
     tracks_table.update_item(
         Key={
@@ -413,7 +404,7 @@ def generate_stats(last_spotify_uri, now):
     data['ratio_ra_spotify'] = 100 \
         * data['total_spotify_songs'] \
         / data['total_ra_songs']
-    print data
+    print(data)
     encoded_json = bytes(json.dumps(data).encode('UTF-8'))
     bucket_name = "resident-archive"
     file_name = "ra-stats.json"
@@ -464,5 +455,5 @@ def handle(event, context):
 
 
 if __name__ == "__main__":
-    print handle({}, {})
+    print(handle({}, {}))
     # print handle({u'Records': [{u'eventID': u'7d3a0eeea532a920df49b37f63912dd7', u'eventVersion': u'1.1', u'dynamodb': {u'SequenceNumber': u'490449600000000013395897450', u'Keys': {u'host': {u'S': u'ra'}, u'id': {u'N': u'956790'}}, u'SizeBytes': 103, u'NewImage': {u'added': {u'N': u'1558178609'}, u'name': {u'S': u'Markus Homm - Discovery'}, u'host': {u'S': u'ra'}, u'first_charted_year': {u'N': u'2019'}, u'release_date_year': {u'N': u'2019'}, u'id': {u'N': u'956790'}}, u'ApproximateCreationDateTime': 1558178610.0, u'StreamViewType': u'NEW_AND_OLD_IMAGES'}, u'awsRegion': u'eu-west-1', u'eventName': u'INSERT', u'eventSourceARN': u'arn:aws:dynamodb:eu-west-1:705440408593:table/any_tracks/stream/2019-05-06T10:02:12.102', u'eventSource': u'aws:dynamodb'}]}, {})

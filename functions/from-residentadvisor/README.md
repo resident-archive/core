@@ -12,7 +12,7 @@ Fetches and stores all track names from `https://residentadvisor.net/tracks/{i}`
 
 ### Build and deploy
 
-    apex build
+    apex build from-residentadvisor
     apex deploy from-residentadvisor --region eu-west-1
 
 ### AWS prerequesites
