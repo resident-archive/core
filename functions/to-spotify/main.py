@@ -90,6 +90,7 @@ LAMBDA_EXEC_TIME = 110
 PLAYLIST_EXPECTED_MAX_LENGTH = 11000
 MIN_YEAR = 2006
 WEBSITE = "https://resident-archive.github.io"
+HOST = "ra"
 
 # DB
 client = boto3.client("dynamodb", region_name='eu-west-1')
@@ -112,7 +113,7 @@ scope = 'playlist-read-private playlist-modify-private playlist-modify-public'
 def get_last_parsed_track(table):
     res = table.query(
         ScanIndexForward=False,
-        KeyConditionExpression=Key('host').eq('ra'),
+        KeyConditionExpression=Key('host').eq(HOST),
         Limit=1
     )
     if res['Count'] == 0:
@@ -412,7 +413,8 @@ def generate_stats(last_spotify_uri, now):
 
 def parse_event_song(record):
     if record['eventSource'] == "aws:dynamodb" \
-       and record['eventName'] == "INSERT":
+       and record['eventName'] == "INSERT" \
+       and record['dynamodb']['Keys']['host']['S'] == HOST:
         return int(record['dynamodb']['Keys']['id']['N'])
 
 
