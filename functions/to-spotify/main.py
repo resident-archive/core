@@ -393,21 +393,19 @@ def get_table_count(table_name):
 def generate_stats(last_spotify_uri, now):
     if not last_spotify_uri:
         return
-    data = {}
-    data['spotify_last_uri'] = last_spotify_uri
-    data['spotify_last_find_time'] = now
-    data['total_ra_songs'] = get_table_count("any_tracks")
-    data['total_spotify_songs'] = get_table_count("any_duplicates")
-    data['total_playlists'] = get_table_count("ra_playlists")
-    data['ratio_ra_spotify'] = 100 \
-        * data['total_spotify_songs'] \
-        / data['total_ra_songs']
+    data = {
+        'spotify_last_uri': last_spotify_uri,
+        'spotify_last_find_time': now,
+        'total_ra_songs': get_table_count("any_tracks"),
+        'total_spotify_songs': get_table_count("any_duplicates"),
+        'total_playlists': get_table_count("ra_playlists")
+    }
+    data['ratio_ra_spotify'] = (100 * data['total_spotify_songs'] \
+                                / data['total_ra_songs'])
     print(data)
     encoded_json = bytes(json.dumps(data).encode('UTF-8'))
     bucket_name = "resident-archive"
-    file_name = "ra-stats.json"
-    lambda_path = "/tmp/" + file_name
-    s3_path = file_name
+    s3_path = "ra-stats.json"
     s3 = boto3.resource("s3")
     s3.Bucket(bucket_name).put_object(Key=s3_path, Body=encoded_json)
 
@@ -442,7 +440,7 @@ def handle(event, context):
             try:
                 last_spotify_uri = (handle_index(index, sp)
                                     or last_spotify_uri)  # ignore None
-            except RATrackNotFoundException as e:
+            except RATrackNotFoundException:
                 last_id = get_last_parsed_track(tracks_table)  # memoized
                 if index >= last_id:
                     index = 0
