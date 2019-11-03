@@ -110,6 +110,7 @@ def handle(event, context):
     else:
         current_id = 0
 
+    response = None
     now = begin_time = int(time.time())
 
     while now < begin_time + LAMBDA_EXEC_TIME:
@@ -140,7 +141,7 @@ def handle(event, context):
         if PERSIST_DATA:
             response = table.put_item(Item=item)
 
-    if PERSIST_DATA:
+    if response:
         return json.dumps(response, indent=4, cls=DecimalEncoder)
 
 
