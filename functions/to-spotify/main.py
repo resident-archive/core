@@ -228,7 +228,8 @@ def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
         spotify_playlist, playlist_num = get_playlist(sp, year)
         sp.user_playlist_add_tracks(SPOTIPY_USER,
                                     spotify_playlist,
-                                    [track_spotify_uri])
+                                    [track_spotify_uri],
+                                    position=0)
     except Exception as e:
         if playlist_seems_full(e, sp, spotify_playlist):
             spotify_playlist, _ = create_playlist_for_year(sp,
