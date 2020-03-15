@@ -15,8 +15,7 @@ reload(sys)
 sys.setdefaultencoding('utf8')
 
 import boto3
-from boto3.dynamodb.conditions import Key, Attr
-from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Key
 
 from sets import Set
 
@@ -24,10 +23,8 @@ import json
 import decimal
 import os
 import time
-import decimal
 
 import spotipy
-import spotipy.util as util
 import spotipy.oauth2 as oauth2
 
 
@@ -42,7 +39,7 @@ class SpotifyAPILimitReached(Exception):
 
 # Helper class to convert a DynamoDB item to JSON.
 class DecimalEncoder(json.JSONEncoder):
-    def default(self, o): # pylint: disable=E0202
+    def default(self, o):  # pylint: disable=E0202
         if isinstance(o, decimal.Decimal):
             if o % 1 > 0:
                 return float(o)
@@ -70,12 +67,20 @@ class TrackName(str):
         return str.__new__(cls, content)
 
     def split_artist_and_track_name(self):
-        return self.split(" - ", 1)
+        artist, track = self.split(" - ", 1)
+        return TrackName.clean_artist(artist), track
 
     @staticmethod
-    def has_question_marks_only(str):
+    def clean_artist(artist):
+        to_remove = ['&', 'feat', 'feat.', 'vs', 'vs.']
+        for s in to_remove:
+            artist = artist.replace(' %s ' % s, ' ')
+        return artist
+
+    @staticmethod
+    def has_question_marks_only(text):
         allowed_chars = Set('?')
-        return Set(str).issubset(allowed_chars)
+        return Set(text).issubset(allowed_chars)
 
     def has_missing_artist_or_name(self):
         try:
@@ -162,7 +167,6 @@ def get_spotify():
             scope=scope,
             cache_path='/tmp/.cache-'+SPOTIPY_USER
         )
-
     token_info = sp_oauth.get_cached_token()
     if not token_info:
         raise(Exception('null token_info'))
@@ -173,12 +177,9 @@ def get_spotify():
 
 def find_on_spotify(sp, artist_and_track):
     query = 'track:"{0[1]}"+artist:"{0[0]}"'.format(artist_and_track)
-    try:
-        results = sp.search(query, limit=1, type='track')
-        for _, t in enumerate(results['tracks']['items']):
-            return t['uri']
-    except Exception as e:
-        raise e
+    results = sp.search(query, limit=1, type='track')
+    for _, t in enumerate(results['tracks']['items']):
+        return t['uri']
 
 
 def get_last_playlist_for_year(year):
@@ -233,8 +234,8 @@ def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
     except Exception as e:
         if playlist_seems_full(e, sp, spotify_playlist):
             spotify_playlist, _ = create_playlist_for_year(sp,
-                                                         year,
-                                                         playlist_num+1)
+                                                            year,
+                                                            playlist_num+1)
             # retry same fonction to use API limit logic
             add_track_to_spotify_playlist(sp, track_spotify_uri, year)
         else:

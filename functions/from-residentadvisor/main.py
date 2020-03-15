@@ -12,14 +12,12 @@ sys.path.append(module_path)
 
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
-from botocore.exceptions import ClientError
 
 import json
 import decimal
 import time
 
 from bs4 import BeautifulSoup
-import urlparse
 import requests
 import re
 
@@ -51,7 +49,7 @@ def extract_track_info(page, last_year):
         release_date_element = release_date_element[0].parent.parent
         release_date_element.div.decompose()
         release_date_year = int(release_date_element.getText().strip()[-4:])
-    except Exception, e:
+    except Exception:
         release_date_year = last_year
 
     try:
@@ -60,7 +58,7 @@ def extract_track_info(page, last_year):
         first_charted_element.div.decompose()
         first_charted_element.a.decompose()
         first_charted_year = int(first_charted_element.getText().strip()[-7:][:4])
-    except Exception, e:
+    except Exception:
         first_charted_year = None
 
     return (title, first_charted_year, release_date_year)
