@@ -1,6 +1,6 @@
 # Resident Archive
 
-https://resident-archive.github.io
+https://residentarchive.com
 
 Resident Archive keeps the entire [RA](https://residentadvisor.net) music collection in sync with Spotify:
 
@@ -22,3 +22,5 @@ Automatically builds yearly playlists from:
 
  - λ1 [`from-residentadvisor`](functions/from-residentadvisor/)
  - λ2 [`to-spotify`](functions/to-spotify/)
+ - λ2 [`to-twitter`](functions/to-twitter/)
+

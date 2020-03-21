@@ -94,7 +94,7 @@ class TrackName(str):
 LAMBDA_EXEC_TIME = 110
 PLAYLIST_EXPECTED_MAX_LENGTH = 11000
 MIN_YEAR = 2006
-WEBSITE = "https://resident-archive.github.io"
+WEBSITE = "https://residentarchive.com"
 HOST = "ra"
 
 # DB

@@ -1,0 +1,8 @@
+{
+  "description": "Tweet artists when one of their songs is added",
+  "runtime": "python3.6",
+  "timeout": 30,
+  "hooks":{
+    "build": "pip3 install -r requirements.txt -t ./env"
+  }
+}

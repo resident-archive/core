@@ -1,0 +1,4 @@
+spotipy
+musicbrainzngs
+python-twitter
+bs4

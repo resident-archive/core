@@ -3,6 +3,6 @@
   "runtime": "python2.7",
   "timeout": 120,
   "hooks":{
-    "build": "pip install -r requirements.txt -t ./env"
+    "build": "pip2 install -r requirements.txt -t ./env"
   }
 }
