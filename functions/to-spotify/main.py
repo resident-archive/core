@@ -94,7 +94,7 @@ class TrackName(str):
 LAMBDA_EXEC_TIME = 110
 PLAYLIST_EXPECTED_MAX_LENGTH = 11000
 MIN_YEAR = 2006
-WEBSITE = "https://residentarchive.com"
+DESCRIPTION = "Resident Advisor Archive www.residentarchive.com @residentarchive"
 HOST = "ra"
 
 # DB
@@ -199,7 +199,8 @@ def create_playlist_for_year(sp, year, num=1):
         playlist_name += ' (%d)' % num
     res = sp.user_playlist_create(SPOTIPY_USER,
                                   playlist_name,
-                                  public=True)
+                                  public=True,
+                                  description=DESCRIPTION)
     playlists_table.put_item(
         Item={
             'year': year,
