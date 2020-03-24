@@ -18,8 +18,10 @@ import requests
 import musicbrainzngs
 import spotipy
 import re
+import boto3
 
-MIN_YEAR = 2006
+dynamodb = boto3.resource("dynamodb", region_name='eu-west-1')
+any_tracks = dynamodb.Table('any_tracks')
 
 
 def stringified_page(url):
@@ -111,6 +113,21 @@ def find_artists_twitters(artists):
     return artists, found_one
 
 
+def mark_as_tweeted(record, tweet_id):
+    update_expr = "set tweet_id = :tweet_id"
+    expr_attrs = {
+        ':tweet_id': tweet_id
+    }
+    any_tracks.update_item(
+        Key={
+            'host': 'ra',
+            'id': record['Keys']['id']
+        },
+        UpdateExpression=update_expr,
+        ExpressionAttributeValues=expr_attrs
+    )
+
+
 def tweet(track):
     import twitter
     api = twitter.Api(consumer_key=os.environ['TWITTER_CONSUMER_KEY'],
@@ -133,11 +150,12 @@ def tweet(track):
     # print("{name: >60}\t{twitter: >40}".format(name=track['name'], twitter=(twitter or "")))
 
     try:
-        api.PostUpdate(txt)
+        return api.PostUpdate(txt)
     except twitter.error.TwitterError as e:
-        # don't raise if tweet is duplicate (127)
-        if e[0]['code'] != 187:
-            raise e
+        for msg in e.message:
+            # don't raise if tweet is duplicate (187)
+            if msg['code'] != 187:
+                raise e
 
 
 def tweet_record(spotify_track, year, playlist_id):
@@ -148,7 +166,7 @@ def tweet_record(spotify_track, year, playlist_id):
     artists, found_one = find_artists_twitters(track['artists'])
 
     if found_one:
-        tweet({
+        return tweet({
             'artists': artists,
             'name': track['name'],
             'year': year,
@@ -161,29 +179,33 @@ def handle(event, context):
     """
     Lambda handler
     """
-    if 'Records' in event:
-        # Process last RA tracks added to DynamoDB stream
-        for record in event['Records']:
-            if record['eventSource'] != "aws:dynamodb" \
-                    or record['eventName'] == "INSERT":
-                continue
+    if 'Records' not in event:
+        return
 
-            image = record['dynamodb']['NewImage']
-            if 'first_charted_year' in image \
-                    and 'spotify_track' in image \
-                    and 'spotify_playlist' in image:
-                year = image['first_charted_year']['N']
-                spotify_track = image['spotify_track']['S']
-                spotify_playlist = image['spotify_playlist']['S']
-                tweet_record(spotify_track, year, spotify_playlist)
+    # Process last RA tracks added to DynamoDB stream
+    for record in event['Records']:
+        if record['eventSource'] != "aws:dynamodb" \
+                or record['eventName'] == "INSERT":
+            continue
+
+        image = record['dynamodb']['NewImage']
+        if 'release_date_year' in image \
+                and 'spotify_track' in image \
+                and 'spotify_playlist' in image \
+                and 'tweet_id' not in image:
+            year = image['release_date_year']['N']
+            spotify_track = image['spotify_track']['S']
+            spotify_playlist = image['spotify_playlist']['S']
+            resp = tweet_record(spotify_track, year, spotify_playlist)
+            if resp:
+                mark_as_tweeted(record['dynamodb'], resp.id)
 
 
 if __name__ == "__main__":
-    # handle({}, {})
     print(handle({u'Records': [
         {u'dynamodb': {u'Keys': {u'host': {u'S': u'ra'},
                                  u'id': {u'N': u'956790'}},
-                       u'NewImage': {u'spotify_track': {u'S': u'spotify:track:1kYLbumWjlTUOJAn80TAVK'},
+                       u'NewImage': {u'spotify_track': {u'S': u'spotify:track:2xG4qpmeaQvLFt4AuFbKEu'},
                                      u'spotify_playlist': {u'S': u'1VHpfwF7HNqZavzg7EIBVM'},
                                      u'release_date_year': {u'N': u'2007'},
                                      u'first_charted_year': {u'N': u'2006'}},

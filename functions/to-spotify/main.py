@@ -197,7 +197,8 @@ def create_playlist_for_year(sp, year, num=1):
     playlist_name = 'RA: %d' % year
     if num > 1:
         playlist_name += ' (%d)' % num
-    res = sp.user_playlist_create(SPOTIPY_USER, playlist_name,
+    res = sp.user_playlist_create(SPOTIPY_USER,
+                                  playlist_name,
                                   public=True)
     playlists_table.put_item(
         Item={
@@ -236,7 +237,7 @@ def add_track_to_spotify_playlist(sp, track_spotify_uri, year):
             spotify_playlist, _ = create_playlist_for_year(sp,
                                                             year,
                                                             playlist_num+1)
-            # retry same fonction to use API limit logic
+            # retry same function to use API limit logic
             add_track_to_spotify_playlist(sp, track_spotify_uri, year)
         else:
             # Reached API limit?
@@ -403,7 +404,7 @@ def generate_stats(last_spotify_uri, now):
         'total_spotify_songs': get_table_count("any_duplicates"),
         'total_playlists': get_table_count("ra_playlists")
     }
-    data['ratio_ra_spotify'] = (100 * data['total_spotify_songs'] \
+    data['ratio_ra_spotify'] = (100 * data['total_spotify_songs']
                                 / data['total_ra_songs'])
     print(data)
     encoded_json = bytes(json.dumps(data).encode('UTF-8'))
