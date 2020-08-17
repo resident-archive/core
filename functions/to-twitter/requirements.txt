@@ -2,3 +2,5 @@ spotipy
 musicbrainzngs
 python-twitter
 bs4
+python-facebook-api
+facebook-sdk==2.0.0

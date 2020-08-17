@@ -22,5 +22,5 @@ Automatically builds yearly playlists from:
 
  - λ1 [`from-residentadvisor`](functions/from-residentadvisor/)
  - λ2 [`to-spotify`](functions/to-spotify/)
- - λ2 [`to-twitter`](functions/to-twitter/)
+ - λ3 [`to-social`](functions/to-social/)
 
