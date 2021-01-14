@@ -106,7 +106,7 @@ def find_artists_twitters(artists):
     for i, artist in enumerate(artists):
         twitter = find_twitter(artist)
         if twitter:
-            artists[i] = '@' + twitter
+            artists[i] = twitter
             found_one = found_one or True
 
     artists = remove_duplicates_insensitive(artists)
@@ -140,7 +140,7 @@ def tweet(track):
     else:
         genres = ""
 
-    txt = ('Track "%s" by %s just added to the @ResidentArchive %s playlist on Spotify%s #electronicmusic %s'
+    txt = ('Track "%s" by %s just added to the ResidentArchive %s playlist on Spotify%s #electronicmusic %s'
            % (track['name'],
               ', '.join(track['artists']),
               track['year'],
