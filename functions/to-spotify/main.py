@@ -1,23 +1,8 @@
 """
 Search track names on Spotify
 """
-
-import os
-import sys
-
-# https://github.com/apex/apex/issues/639#issuecomment-455883587
-file_path = os.path.dirname(__file__)
-module_path = os.path.join(file_path, "env")
-sys.path.append(module_path)
-
-# https://stackoverflow.com/a/39293287/1515819
-reload(sys)
-sys.setdefaultencoding('utf8')
-
 import boto3
 from boto3.dynamodb.conditions import Key
-
-from sets import Set
 
 import json
 import decimal
@@ -79,8 +64,8 @@ class TrackName(str):
 
     @staticmethod
     def has_question_marks_only(text):
-        allowed_chars = Set('?')
-        return Set(text).issubset(allowed_chars)
+        allowed_chars = set('?')
+        return set(text).issubset(allowed_chars)
 
     def has_missing_artist_or_name(self):
         try:
@@ -177,6 +162,8 @@ def get_spotify():
 
 def find_on_spotify(sp, artist_and_track):
     query = 'track:"{0[1]}"+artist:"{0[0]}"'.format(artist_and_track)
+    if len(query) > 100:
+        return
     results = sp.search(query, limit=1, type='track')
     for _, t in enumerate(results['tracks']['items']):
         return t['uri']
@@ -217,8 +204,6 @@ def get_playlist(sp, year):
 
 
 def playlist_seems_full(e, sp, spotify_playlist):
-    if not (hasattr(e, 'http_status') and e.http_status in [403, 500]):
-        return False
     # only query Spotify total as a last resort
     # https://github.com/spotify/web-api/issues/1179
     playlist = sp.user_playlist(SPOTIPY_USER, spotify_playlist, "tracks")

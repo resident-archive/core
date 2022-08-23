@@ -1,8 +1,0 @@
-{
-  "description": "Search for track names on Spotify",
-  "runtime": "python2.7",
-  "timeout": 120,
-  "hooks":{
-    "build": "pip2 install -r requirements.txt -t ./env"
-  }
-}
