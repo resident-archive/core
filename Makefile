@@ -7,5 +7,5 @@ setup-to-spotify:
 deploy-to-spotify:
 	aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.eu-west-1.amazonaws.com
 	docker build -t ra_to-spotify functions/to-spotify
-	docker tag to-spotify:latest ${AWS_ACCOUNT_ID}.dkr.ecr.eu-west-1.amazonaws.com/ra_to-spotify:latest
+	docker tag ra_to-spotify:latest ${AWS_ACCOUNT_ID}.dkr.ecr.eu-west-1.amazonaws.com/ra_to-spotify:latest
 	docker push ${AWS_ACCOUNT_ID}.dkr.ecr.eu-west-1.amazonaws.com/ra_to-spotify:latest

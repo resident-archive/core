@@ -1,12 +1,20 @@
 """
 Search track names on Spotify
 """
+import os
+import sys
+
+file_path = os.path.dirname(__file__)
+module_path = os.path.join(file_path, "env")
+sys.path.append(module_path)
+
 import boto3
 from boto3.dynamodb.conditions import Key
 
 import json
 import decimal
-import os
+
+
 import time
 
 import spotipy
